@@ -1,0 +1,1 @@
+flask flask-cors requests beautifulsoup4 jieba snownlp lxml
