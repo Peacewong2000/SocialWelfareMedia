@@ -225,10 +225,15 @@ def force_refresh():
     print("收到強制更新請求...")
     data = fetch_google_news_rss()
     return jsonify(data)
+@app.route('/', methods=['GET'])
+def home():
+    return "Social News Analysis API is running!"
+
+# --- 初始化檢查 ---
+if not os.path.exists(DB_FILE):
+    print("首次執行，正在建立初始資料庫...")
+    fetch_google_news_rss()
 
 if __name__ == '__main__':
-    print("社福新聞分析伺服器啟動中... (http://localhost:5000)")
-    if not os.path.exists(DB_FILE):
-        print("首次執行，正在建立資料庫...")
-        fetch_google_news_rss()
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000)) # 取得雲端平台分配的 Port
+    app.run(host='0.0.0.0', port=port) # 允許外部連線
