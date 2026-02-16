@@ -17,7 +17,7 @@ app.config['JSON_AS_ASCII'] = False
 CORS(app)
 
 # --- 設定 ---
-DB_FILE = "news_db.json"
+DB_FILE = "/data/news_db.json"
 CACHE_DURATION = 3600 * 6 
 
 # 搜尋關鍵字
