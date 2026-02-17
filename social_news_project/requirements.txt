@@ -4,5 +4,5 @@ requests
 beautifulsoup4
 jieba
 lxml
-snownip
+snownlp
 gunicorn
