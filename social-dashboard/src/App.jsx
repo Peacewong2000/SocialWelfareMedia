@@ -162,13 +162,13 @@ export default function SocialServiceDashboard() {
     setConnectionError('');
     
     try {
-      console.log("正在透過代理連線至 /api/news-data ...");
+     console.log("正在連線至 Render 雲端後端..."); 
       const controller = new AbortController();
       // 設定超時為 60 秒
       const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
-      // 這裡使用了測試成功的代理路徑
-      const response = await fetch('/api/news-data', {
+      // [修改點] 換成您的 Render 完整網址
+      const response = await fetch('https://socialwelfaremedia.onrender.com/api/news-data', {
           signal: controller.signal
       });
       clearTimeout(timeoutId);
