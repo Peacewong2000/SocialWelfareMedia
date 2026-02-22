@@ -21,8 +21,7 @@ CORS(app)
 # --- [關鍵設定] 持久化磁碟路徑 ---
 DB_FILE = "/data/news_db.json"
 
-# 優化記憶體使用：關閉 jieba 並行模式並預先初始化
-jieba.enable_parallel(0)
+# 優化記憶體使用：預先初始化 jieba (已移除會導致錯誤的 enable_parallel)
 jieba.initialize()
 
 CACHE_DURATION = 3600 * 6  # 6 小時更新一次
