@@ -719,7 +719,8 @@ export default function SocialServiceDashboard() {
 
           <div className="flex-1 w-full min-h-0 mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={serviceTrendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
+              {/* 加上 key 強迫圖表在時間單位切換時重新計算 Y 軸 */}
+              <AreaChart key={timeUnitService} data={serviceTrendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" tickMargin={10} minTickGap={20}/>
                 <YAxis tick={{fontSize: 11}} width={40} />
@@ -799,7 +800,8 @@ export default function SocialServiceDashboard() {
               <div className="flex-1 w-full min-h-0 mt-2">
                   {selectedKeywords.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={keywordData.trendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
+                      {/* 加上 key 強迫圖表在時間單位切換時重新計算 Y 軸 */}
+                      <LineChart key={timeUnitKeyword} data={keywordData.trendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                         <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" minTickGap={20} tickMargin={10}/>
                         <YAxis tick={{fontSize: 11}} width={40}/>
