@@ -112,8 +112,7 @@ const SimpleWordCloud = ({ words, selectedWords, onWordClick }) => {
   const maxVal = Math.max(...words.map(w => w.value));
   
   return (
-    // 【修正排版溢出】將 items-center / content-center 移除，改為 content-start，避免文字上下溢出
-    <div className="flex flex-wrap gap-2 justify-center items-start content-start pb-4">
+    <div className="flex flex-wrap gap-3 justify-start items-center content-start">
       {words.map((word, idx) => {
         const isSelected = selectedWords.includes(word.text);
         const size = 12 + (word.value / maxVal) * 20; 
@@ -127,10 +126,10 @@ const SimpleWordCloud = ({ words, selectedWords, onWordClick }) => {
             key={idx} 
             onClick={() => onWordClick(word.text)}
             className={`
-              transition-all cursor-pointer select-none px-3 py-1.5 rounded-full border leading-tight
+              transition-all cursor-pointer select-none px-4 py-2 rounded-full border leading-none
               ${isSelected 
                 ? `bg-blue-50 ${baseColor} border-blue-300 shadow-md scale-105 font-bold z-10` 
-                : `bg-transparent border-transparent ${baseColor} hover:bg-slate-50 hover:border-slate-200 font-medium`
+                : `bg-white border-slate-200 ${baseColor} hover:bg-slate-50 hover:border-slate-300 font-medium`
               }
             `}
             style={{ fontSize: `${size}px`, opacity }}
@@ -166,11 +165,8 @@ export default function SocialServiceDashboard() {
   const [timeUnitService, setTimeUnitService] = useState('month');
   const [timeUnitKeyword, setTimeUnitKeyword] = useState('month');
   
-  // 關鍵字設定
-  const [keywordDateRange, setKeywordDateRange] = useState('global'); 
+  // 關鍵字設定 (已移除時間過濾，完全同步全域設定)
   const [selectedKeywords, setSelectedKeywords] = useState([]);
-  const [customStartDateKw, setCustomStartDateKw] = useState('');
-  const [customEndDateKw, setCustomEndDateKw] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
@@ -216,8 +212,6 @@ export default function SocialServiceDashboard() {
       start.setDate(end.getDate() - 30);
       setGlobalStartDate(start.toISOString().split('T')[0]);
       setGlobalEndDate(end.toISOString().split('T')[0]);
-      setCustomStartDateKw(start.toISOString().split('T')[0]);
-      setCustomEndDateKw(end.toISOString().split('T')[0]);
     }
   };
 
@@ -354,28 +348,9 @@ export default function SocialServiceDashboard() {
 
   const keywordData = useMemo(() => {
     const totalStats = {};
-    let activeData = filteredData;
     
-    if (keywordDateRange !== 'global') {
-        const now = new Date();
-        const cutoff = new Date();
-        if (keywordDateRange === 'half_year') cutoff.setDate(now.getDate() - 180);
-        else if (keywordDateRange === 'year') cutoff.setDate(now.getDate() - 365);
-        else if (keywordDateRange === 'custom' && customStartDateKw && customEndDateKw) {
-            const start = new Date(customStartDateKw);
-            const end = new Date(customEndDateKw);
-            end.setHours(23, 59, 59, 999);
-            activeData = filteredData.filter(d => {
-                const itemDate = new Date(d.date);
-                return itemDate >= start && itemDate <= end;
-            });
-        }
-        if (keywordDateRange !== 'custom') {
-            activeData = filteredData.filter(d => new Date(d.date) >= cutoff);
-        }
-    }
-
-    activeData.forEach(item => {
+    // 直接使用全域過濾後的數據 (移除獨立的時間過濾)
+    filteredData.forEach(item => {
       const stopWords = ['香港', '社福', '服務', '報導', '相關']; 
       item.keywords.forEach(kw => {
         if (!stopWords.includes(kw)) {
@@ -391,7 +366,7 @@ export default function SocialServiceDashboard() {
     
     const top5 = sortedKeywords.slice(0, 5).map(k => k.text);
     
-    const grouped = groupByTime(activeData, timeUnitKeyword);
+    const grouped = groupByTime(filteredData, timeUnitKeyword);
     const trackableKeywords = sortedKeywords.map(k => k.text);
 
     const trendData = grouped.map(group => {
@@ -410,15 +385,16 @@ export default function SocialServiceDashboard() {
       trendData: trendData,
       defaultTop5: top5
     };
-  }, [filteredData, keywordDateRange, customStartDateKw, customEndDateKw, timeUnitKeyword]);
+  }, [filteredData, timeUnitKeyword]);
 
+  // 當資料或過濾範圍變動時，重置選取的關鍵字
   useEffect(() => {
     if (keywordData.defaultTop5.length > 0) {
         setSelectedKeywords(keywordData.defaultTop5);
     } else {
         setSelectedKeywords([]);
     }
-  }, [globalDateRange, globalStartDate, globalEndDate, keywordDateRange, customStartDateKw, customEndDateKw]);
+  }, [keywordData.defaultTop5]);
 
   const handleKeywordClick = (word) => {
     setSelectedKeywords(prev => {
@@ -467,6 +443,7 @@ export default function SocialServiceDashboard() {
   return (
     <div className="min-h-screen bg-slate-50 p-6 font-sans">
       
+      {/* 頂部 Header */}
       <header className="mb-8 flex flex-col xl:flex-row xl:items-start justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
@@ -547,11 +524,9 @@ export default function SocialServiceDashboard() {
       </header>
 
       {/* ==========================================================
-          頂部：關鍵指標 (2x2) 與 類別總體分佈 (圓餅圖)
+          區塊 1：關鍵指標 (2x2) 與 類別總體分佈 (圓餅圖)
           ========================================================== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        
-        {/* 左側：4個關鍵指標 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
           <StatCard title="分析文章總數" value={filteredData.length} subtext="基於所選分析區間" icon={FileText} colorClass="bg-blue-500 text-blue-500" />
           <StatCard title="綜合情緒指數" value={parseFloat(overallSentiment) > 0 ? `+${overallSentiment}` : overallSentiment} subtext="一維極性 (-1 ~ +1)" icon={parseFloat(overallSentiment) >= 0 ? TrendingUp : TrendingDown} colorClass={parseFloat(overallSentiment) >= 0 ? "bg-emerald-500 text-emerald-500" : "bg-rose-500 text-rose-500"} />
@@ -559,7 +534,6 @@ export default function SocialServiceDashboard() {
           <StatCard title="核心關鍵字" value={keywordData.cloudData[0]?.text || "N/A"} subtext="出現頻次最高" icon={Search} colorClass="bg-amber-500 text-amber-500" />
         </div>
 
-        {/* 右側：類別總體分佈 (圓餅圖) */}
         <Card className="flex flex-col h-full min-h-[300px]">
           <h2 className="text-xl font-bold text-slate-800 mb-2 flex items-center gap-2">
             <PieChartIcon size={20} className="text-blue-600" />
@@ -593,309 +567,266 @@ export default function SocialServiceDashboard() {
       </div>
 
       {/* ==========================================================
-          主圖表區：趨勢圖 與 關鍵字探索
+          區塊 2：輿情線性分析 (改為 100% 滿版寬度)
           ========================================================== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* 左側：趨勢分析區 (佔 2/3) */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          
-          {/* 3.1 輿情線性分析 */}
-          <Card className="flex flex-col h-[450px]">
-            <div className="flex flex-col xl:flex-row justify-between xl:items-start gap-4 mb-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                  <Activity size={20} className="text-blue-600" />
-                  輿情線性分析
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  {viewMode === 'table' ? '查看原始數據' : (chartMode === 'overview' ? '顯示: 總體報導聲量' : chartMode === 'general_emotion' ? '顯示: 綜合情緒極性走勢 (-1 到 1)' : '顯示: 六大情緒維度變化')}
-                </p>
+      <Card className="flex flex-col h-[450px] mb-6">
+        <div className="flex flex-col xl:flex-row justify-between xl:items-start gap-4 mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <Activity size={20} className="text-blue-600" />
+              輿情線性分析
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              {viewMode === 'table' ? '查看原始數據' : (chartMode === 'overview' ? '顯示: 總體報導聲量' : chartMode === 'general_emotion' ? '顯示: 綜合情緒極性走勢 (-1 到 1)' : '顯示: 六大情緒維度變化')}
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+              <div className="flex items-center gap-2 border-r border-slate-200 pr-3">
+                <span className="text-xs text-slate-400">分析單位:</span>
+                <TimeUnitSelector value={timeUnitOverview} onChange={setTimeUnitOverview} />
               </div>
 
-              <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-                  <div className="flex items-center gap-2 border-r border-slate-200 pr-3">
-                    <span className="text-xs text-slate-400">分析單位:</span>
-                    <TimeUnitSelector value={timeUnitOverview} onChange={setTimeUnitOverview} />
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex bg-slate-100 p-1 rounded-lg">
-                      <button onClick={() => setViewMode('chart')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${viewMode === 'chart' ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
-                        <LineChartIcon size={12}/> 圖表
-                      </button>
-                      <button onClick={() => setViewMode('table')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${viewMode === 'table' ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
-                        <TableIcon size={12}/> 列表
-                      </button>
-                    </div>
-
-                    {viewMode === 'chart' && (
-                      <div className="flex bg-slate-100 p-1 rounded-lg">
-                        <button onClick={() => setChartMode('overview')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'overview' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
-                          <Layers size={12}/> 聲量
-                        </button>
-                        <button onClick={() => setChartMode('general_emotion')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'general_emotion' ? 'bg-white text-emerald-600 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
-                          <TrendingUp size={12}/> 綜合情緒
-                        </button>
-                        <button onClick={() => setChartMode('emotions')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'emotions' ? 'bg-white text-purple-700 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
-                          <Activity size={12}/> 六大情緒
-                        </button>
-                      </div>
-                    )}
-                  </div>
-              </div>
-            </div>
-
-            <div className="flex-1 w-full min-h-0">
-              {viewMode === 'chart' ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart key={`${chartMode}-${timeUnitOverview}`} data={chartDataOverview} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
-                    <defs>
-                      <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis 
-                      dataKey="name" 
-                      tick={{fontSize: 11, fill: '#64748b'}} 
-                      interval="preserveStartEnd" 
-                      tickMargin={10} 
-                      minTickGap={30} 
-                    />
-                    
-                    {chartMode === 'overview' && (
-                      <>
-                        <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" tick={{fontSize: 12}} label={{ value: '篇數', angle: -90, position: 'insideLeft', fill: '#3b82f6', fontSize: 10 }}/>
-                        <Area yAxisId="left" type="monotone" dataKey="count" name="報導篇數" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCount)" />
-                      </>
-                    )}
-                    
-                    {chartMode === 'general_emotion' && (
-                      <>
-                        <YAxis yAxisId="sentiment" orientation="left" stroke="#10b981" domain={[-1, 1]} tick={{fontSize: 12}} label={{ value: '綜合情緒極性 (-1~1)', angle: -90, position: 'insideLeft', fill: '#10b981', fontSize: 10 }}/>
-                        <ReferenceLine y={0} yAxisId="sentiment" stroke="#94a3b8" strokeDasharray="3 3" />
-                        <Line yAxisId="sentiment" type="monotone" dataKey="avgSentiment" name="綜合情緒" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} activeDot={{ r: 6 }} />
-                      </>
-                    )}
-
-                    {chartMode === 'emotions' && (
-                      <>
-                        <YAxis yAxisId="emotion" orientation="left" stroke="#64748b" domain={[0, 1]} tick={{fontSize: 12}} label={{ value: '情緒強度 (0-1)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10 }}/>
-                        <Line yAxisId="emotion" type="monotone" dataKey="joy" name="快樂" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                        <Line yAxisId="emotion" type="monotone" dataKey="trust" name="信任" stroke="#10b981" strokeWidth={2} dot={false} />
-                        <Line yAxisId="emotion" type="monotone" dataKey="anticipation" name="期待" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                        <Line yAxisId="emotion" type="monotone" dataKey="sadness" name="悲傷" stroke="#64748b" strokeWidth={2} dot={false} strokeDasharray="5 5"/>
-                        <Line yAxisId="emotion" type="monotone" dataKey="anger" name="憤怒" stroke="#ef4444" strokeWidth={2} dot={false} />
-                        <Line yAxisId="emotion" type="monotone" dataKey="fear" name="恐懼" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                      </>
-                    )}
-                    <RechartsTooltip labelFormatter={(l, p) => p && p.length > 0 ? p[0].payload.fullLabel : l} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                    <Legend verticalAlign="top" height={36}/>
-                  </ComposedChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full w-full overflow-auto border border-slate-200 rounded-lg">
-                  <table className="w-full text-sm text-left text-slate-600">
-                    <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0">
-                      <tr>
-                        <th className="px-4 py-3">時間段</th>
-                        <th className="px-4 py-3 text-right">篇數</th>
-                        <th className="px-4 py-3 text-right">綜合情緒</th>
-                        <th className="px-4 py-3 text-right">快樂</th>
-                        <th className="px-4 py-3 text-right">悲傷</th>
-                        <th className="px-4 py-3 text-right">憤怒</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {chartDataOverview.map((row, index) => (
-                        <tr key={index} className="bg-white border-b hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-900">{row.fullLabel}</td>
-                          <td className="px-4 py-3 text-right">{row.count}</td>
-                          <td className="px-4 py-3 text-right font-bold" style={{ color: row.avgSentiment >= 0 ? '#10b981' : '#ef4444' }}>
-                            {row.avgSentiment > 0 ? `+${row.avgSentiment}` : row.avgSentiment}
-                          </td>
-                          <td className="px-4 py-3 text-right">{row.joy}</td>
-                          <td className="px-4 py-3 text-right">{row.sadness}</td>
-                          <td className="px-4 py-3 text-right">{row.anger}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </Card>
-
-          {/* 3.2 服務類別趨勢追蹤 */}
-          <Card className="flex flex-col h-[400px]">
-            <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                  <BarChart2 size={20} className="text-blue-600" />
-                  服務類別趨勢追蹤
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">追蹤不同服務議題的報導量變化</p>
-              </div>
-              <div className="flex items-center gap-2">
-                 <span className="text-xs text-slate-400">分析單位:</span>
-                 <TimeUnitSelector value={timeUnitService} onChange={setTimeUnitService} />
-              </div>
-            </div>
-
-            <div className="flex-1 w-full min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={serviceTrendData} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" tickMargin={10} minTickGap={30}/>
-                  <YAxis tick={{fontSize: 12}} />
-                  <RechartsTooltip 
-                    labelFormatter={(label, payload) => payload && payload.length > 0 ? payload[0].payload.fullLabel : label}
-                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                  />
-                  <Legend wrapperStyle={{fontSize: '12px'}}/>
-                  {Object.keys(SERVICE_COLORS).map((type, index) => (
-                    <Area 
-                      key={type}
-                      type="monotone" 
-                      dataKey={type} 
-                      stackId="1" 
-                      stroke={SERVICE_COLORS[type]} 
-                      fill={SERVICE_COLORS[type]} 
-                      fillOpacity={0.8}
-                    />
-                  ))}
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-        </div>
-
-        {/* 右側：關鍵字探索區 (佔 1/3) */}
-        <div className="flex flex-col gap-6">
-          
-          {/* 關鍵字文字雲卡片 */}
-          <Card className="flex flex-col h-[400px]">
-            <div className="flex flex-col gap-3">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <Cloud size={20} className="text-blue-600" />
-                    關鍵字探索
-                </h2>
-                <button 
-                    onClick={() => setSelectedKeywords(keywordData.defaultTop5)}
-                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 px-2 py-1.5 rounded bg-slate-50 border border-slate-200 hover:bg-blue-50 transition-colors"
-                    title="重置為前5名"
-                >
-                    <RefreshCcw size={12}/> 重置
-                </button>
-              </div>
-              <div className="flex bg-slate-50 rounded-md border border-slate-200 self-end">
-                  <button 
-                      onClick={() => setKeywordDateRange('global')}
-                      className={`px-3 py-1.5 text-xs transition-all first:rounded-l-md ${keywordDateRange === 'global' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-slate-500 hover:bg-slate-100'}`}
-                  >
-                      同步總表
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex bg-slate-100 p-1 rounded-lg">
+                  <button onClick={() => setViewMode('chart')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${viewMode === 'chart' ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
+                    <LineChartIcon size={12}/> 圖表
                   </button>
-                  <button 
-                      onClick={() => setKeywordDateRange('half_year')}
-                      className={`px-3 py-1.5 text-xs transition-all ${keywordDateRange === 'half_year' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-slate-500 hover:bg-slate-100'}`}
-                  >
-                      半年
+                  <button onClick={() => setViewMode('table')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${viewMode === 'table' ? 'bg-white text-slate-800 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
+                    <TableIcon size={12}/> 列表
                   </button>
-                  <button 
-                      onClick={() => setKeywordDateRange('custom')}
-                      className={`px-3 py-1.5 text-xs transition-all last:rounded-r-md flex items-center gap-1 ${keywordDateRange === 'custom' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-slate-500 hover:bg-slate-100'}`}
-                  >
-                      <CalendarDays size={10} /> 自訂
-                  </button>
-              </div>
-            </div>
-
-            {keywordDateRange === 'custom' && (
-                <div className="flex items-center justify-end gap-2 mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                    <input 
-                        type="date" 
-                        value={customStartDateKw} 
-                        onChange={(e) => setCustomStartDateKw(e.target.value)}
-                        className="px-2 py-1 text-xs border border-slate-300 rounded focus:outline-none focus:border-blue-500 text-slate-600"
-                    />
-                    <span className="text-slate-400 text-xs">至</span>
-                    <input 
-                        type="date" 
-                        value={customEndDateKw} 
-                        onChange={(e) => setCustomEndDateKw(e.target.value)}
-                        className="px-2 py-1 text-xs border border-slate-300 rounded focus:outline-none focus:border-blue-500 text-slate-600"
-                    />
                 </div>
-            )}
 
-            {/* 【修正排版溢出】替容器加入 overflow-hidden 與內部的 overflow-y-auto */}
-            <div className="bg-slate-50 flex-1 rounded-lg border border-slate-100 relative min-h-0 flex flex-col overflow-hidden mt-3">
-                  {/* 將點擊選取固定在右上角，不受捲動影響 */}
-                  <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-sm z-20 pointer-events-none">
-                    <MousePointerClick size={12}/> 點擊選取
-                  </div>
-                  {/* 可向下捲動的內部容器 */}
-                  <div className="flex-1 overflow-y-auto p-3 pt-10">
-                      <SimpleWordCloud 
-                        words={keywordData.cloudData} 
-                        selectedWords={selectedKeywords}
-                        onWordClick={handleKeywordClick}
-                      />
-                  </div>
-            </div>
-          </Card>
-
-          {/* 關鍵字走勢圖 */}
-          <Card className="flex-1 h-auto min-h-[400px] flex flex-col">
-            <div className="flex flex-col mb-4 gap-3">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                    <LineChartIcon size={20} className="text-blue-600" />
-                    關鍵字走勢
-                </h2>
-                <div className="flex items-center gap-2">
-                   <span className="text-xs text-slate-400">分析單位:</span>
-                   <TimeUnitSelector value={timeUnitKeyword} onChange={setTimeUnitKeyword} />
-                </div>
-              </div>
-              <p className="text-xs text-slate-400">追蹤所選關鍵字的報導頻次變化</p>
-            </div>
-
-            <div className="flex-1 w-full min-h-0">
-                {selectedKeywords.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={keywordData.trendData} margin={{ top: 10, right: 30, left: -10, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" minTickGap={30} tickMargin={10}/>
-                      <YAxis tick={{fontSize: 12}} />
-                      <RechartsTooltip labelFormatter={(l, p) => p && p.length > 0 ? p[0].payload.fullLabel : l} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
-                      <Legend wrapperStyle={{fontSize: '12px'}}/>
-                      {selectedKeywords.map((kw, i) => (
-                        <Line 
-                          key={kw} 
-                          type="monotone" 
-                          dataKey={kw} 
-                          stroke={KEYWORD_COLORS[i % KEYWORD_COLORS.length]} 
-                          strokeWidth={2}
-                          dot={false}
-                          animationDuration={500}
-                        />
-                      ))}
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                    <TrendingUp size={32} className="mb-2 opacity-50"/>
-                    <p className="text-sm">請在上方點擊任意關鍵字</p>
-                    <p className="text-xs mt-1">系統將在此顯示其聲量走勢</p>
+                {viewMode === 'chart' && (
+                  <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <button onClick={() => setChartMode('overview')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'overview' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <Layers size={12}/> 聲量
+                    </button>
+                    <button onClick={() => setChartMode('general_emotion')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'general_emotion' ? 'bg-white text-emerald-600 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <TrendingUp size={12}/> 綜合情緒
+                    </button>
+                    <button onClick={() => setChartMode('emotions')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'emotions' ? 'bg-white text-purple-700 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
+                      <Activity size={12}/> 六大情緒
+                    </button>
                   </div>
                 )}
+              </div>
+          </div>
+        </div>
+
+        <div className="flex-1 w-full min-h-0">
+          {viewMode === 'chart' ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart key={`${chartMode}-${timeUnitOverview}`} data={chartDataOverview} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
+                <defs>
+                  <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{fontSize: 11, fill: '#64748b'}} 
+                  interval="preserveStartEnd" 
+                  tickMargin={10} 
+                  minTickGap={30} 
+                />
+                
+                {chartMode === 'overview' && (
+                  <>
+                    <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" tick={{fontSize: 12}} label={{ value: '篇數', angle: -90, position: 'insideLeft', fill: '#3b82f6', fontSize: 10 }}/>
+                    <Area yAxisId="left" type="monotone" dataKey="count" name="報導篇數" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCount)" />
+                  </>
+                )}
+                
+                {chartMode === 'general_emotion' && (
+                  <>
+                    <YAxis yAxisId="sentiment" orientation="left" stroke="#10b981" domain={[-1, 1]} tick={{fontSize: 12}} label={{ value: '綜合情緒極性 (-1~1)', angle: -90, position: 'insideLeft', fill: '#10b981', fontSize: 10 }}/>
+                    <ReferenceLine y={0} yAxisId="sentiment" stroke="#94a3b8" strokeDasharray="3 3" />
+                    <Line yAxisId="sentiment" type="monotone" dataKey="avgSentiment" name="綜合情緒" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} activeDot={{ r: 6 }} />
+                  </>
+                )}
+
+                {chartMode === 'emotions' && (
+                  <>
+                    <YAxis yAxisId="emotion" orientation="left" stroke="#64748b" domain={[0, 1]} tick={{fontSize: 12}} label={{ value: '情緒強度 (0-1)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10 }}/>
+                    <Line yAxisId="emotion" type="monotone" dataKey="joy" name="快樂" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                    <Line yAxisId="emotion" type="monotone" dataKey="trust" name="信任" stroke="#10b981" strokeWidth={2} dot={false} />
+                    <Line yAxisId="emotion" type="monotone" dataKey="anticipation" name="期待" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                    <Line yAxisId="emotion" type="monotone" dataKey="sadness" name="悲傷" stroke="#64748b" strokeWidth={2} dot={false} strokeDasharray="5 5"/>
+                    <Line yAxisId="emotion" type="monotone" dataKey="anger" name="憤怒" stroke="#ef4444" strokeWidth={2} dot={false} />
+                    <Line yAxisId="emotion" type="monotone" dataKey="fear" name="恐懼" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                  </>
+                )}
+                <RechartsTooltip labelFormatter={(l, p) => p && p.length > 0 ? p[0].payload.fullLabel : l} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                <Legend verticalAlign="top" height={36}/>
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full w-full overflow-auto border border-slate-200 rounded-lg">
+              <table className="w-full text-sm text-left text-slate-600">
+                <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3">時間段</th>
+                    <th className="px-4 py-3 text-right">篇數</th>
+                    <th className="px-4 py-3 text-right">綜合情緒</th>
+                    <th className="px-4 py-3 text-right">快樂</th>
+                    <th className="px-4 py-3 text-right">悲傷</th>
+                    <th className="px-4 py-3 text-right">憤怒</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chartDataOverview.map((row, index) => (
+                    <tr key={index} className="bg-white border-b hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-slate-900">{row.fullLabel}</td>
+                      <td className="px-4 py-3 text-right">{row.count}</td>
+                      <td className="px-4 py-3 text-right font-bold" style={{ color: row.avgSentiment >= 0 ? '#10b981' : '#ef4444' }}>
+                        {row.avgSentiment > 0 ? `+${row.avgSentiment}` : row.avgSentiment}
+                      </td>
+                      <td className="px-4 py-3 text-right">{row.joy}</td>
+                      <td className="px-4 py-3 text-right">{row.sadness}</td>
+                      <td className="px-4 py-3 text-right">{row.anger}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </Card>
+          )}
+        </div>
+      </Card>
+
+      {/* ==========================================================
+          區塊 3：並排佈局 (左: 服務類別趨勢 | 右: 關鍵字探索+走勢)
+          ========================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* 左半部：服務類別趨勢 (自動拉長高度對齊右側) */}
+        <Card className="flex flex-col h-full min-h-[500px]">
+          <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <BarChart2 size={20} className="text-blue-600" />
+                服務類別趨勢
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">追蹤各類別的報導量變化</p>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">分析單位:</span>
+                <TimeUnitSelector value={timeUnitService} onChange={setTimeUnitService} />
+            </div>
+          </div>
+
+          <div className="flex-1 w-full min-h-0 mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={serviceTrendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" tickMargin={10} minTickGap={20}/>
+                <YAxis tick={{fontSize: 11}} width={40} />
+                <RechartsTooltip 
+                  labelFormatter={(label, payload) => payload && payload.length > 0 ? payload[0].payload.fullLabel : label}
+                  contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                />
+                <Legend wrapperStyle={{fontSize: '11px', paddingTop: '10px'}}/>
+                {Object.keys(SERVICE_COLORS).map((type, index) => (
+                  <Area 
+                    key={type}
+                    type="monotone" 
+                    dataKey={type} 
+                    stackId="1" 
+                    stroke={SERVICE_COLORS[type]} 
+                    fill={SERVICE_COLORS[type]} 
+                    fillOpacity={0.8}
+                  />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        {/* 右半部：關鍵字生態系 (上下疊加) */}
+        <div className="flex flex-col gap-6">
+            
+            {/* 右上：文字雲 */}
+            <Card className="flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                      <Cloud size={20} className="text-blue-600" />
+                      關鍵字探索
+                  </h2>
+                  <p className="text-xs text-slate-400 hidden sm:block">點擊下方詞彙查看走勢</p>
+                </div>
+                <button 
+                    onClick={() => setSelectedKeywords(keywordData.defaultTop5)}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 hover:bg-blue-50 transition-colors shadow-sm"
+                    title="重置為前5名"
+                >
+                    <RefreshCcw size={12}/> 重置選取
+                </button>
+              </div>
+
+              <div className="bg-slate-50 rounded-lg border border-slate-100 relative p-4 max-h-[200px] overflow-y-auto">
+                    <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-sm z-20 pointer-events-none">
+                      <MousePointerClick size={12}/> 點擊過濾
+                    </div>
+                    <SimpleWordCloud 
+                      words={keywordData.cloudData} 
+                      selectedWords={selectedKeywords}
+                      onWordClick={handleKeywordClick}
+                    />
+              </div>
+            </Card>
+
+            {/* 右下：關鍵字走勢 */}
+            <Card className="flex flex-col flex-1 min-h-[350px]">
+              <div className="flex flex-col mb-4 gap-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <LineChartIcon size={20} className="text-blue-600" />
+                        關鍵字走勢
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1">追蹤所選關鍵字的報導頻次</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">分析單位:</span>
+                      <TimeUnitSelector value={timeUnitKeyword} onChange={setTimeUnitKeyword} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 w-full min-h-0 mt-2">
+                  {selectedKeywords.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={keywordData.trendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" minTickGap={20} tickMargin={10}/>
+                        <YAxis tick={{fontSize: 11}} width={40}/>
+                        <RechartsTooltip labelFormatter={(l, p) => p && p.length > 0 ? p[0].payload.fullLabel : l} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}/>
+                        <Legend wrapperStyle={{fontSize: '11px', paddingTop: '10px'}}/>
+                        {selectedKeywords.map((kw, i) => (
+                          <Line 
+                            key={kw} 
+                            type="monotone" 
+                            dataKey={kw} 
+                            stroke={KEYWORD_COLORS[i % KEYWORD_COLORS.length]} 
+                            strokeWidth={2}
+                            dot={false}
+                            animationDuration={500}
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                      <TrendingUp size={32} className="mb-2 opacity-50"/>
+                      <p className="text-sm">請在上方點擊任意關鍵字</p>
+                      <p className="text-xs mt-1">系統將在此顯示其聲量走勢</p>
+                    </div>
+                  )}
+              </div>
+            </Card>
 
         </div>
       </div>
