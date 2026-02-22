@@ -112,7 +112,8 @@ const SimpleWordCloud = ({ words, selectedWords, onWordClick }) => {
   const maxVal = Math.max(...words.map(w => w.value));
   
   return (
-    <div className="flex flex-wrap gap-2 justify-center items-center h-full content-center p-2">
+    // 【修正排版溢出】將 items-center / content-center 移除，改為 content-start，避免文字上下溢出
+    <div className="flex flex-wrap gap-2 justify-center items-start content-start pb-4">
       {words.map((word, idx) => {
         const isSelected = selectedWords.includes(word.text);
         const size = 12 + (word.value / maxVal) * 20; 
@@ -126,7 +127,7 @@ const SimpleWordCloud = ({ words, selectedWords, onWordClick }) => {
             key={idx} 
             onClick={() => onWordClick(word.text)}
             className={`
-              transition-all cursor-pointer select-none px-3 py-1 rounded-full border
+              transition-all cursor-pointer select-none px-3 py-1.5 rounded-full border leading-tight
               ${isSelected 
                 ? `bg-blue-50 ${baseColor} border-blue-300 shadow-md scale-105 font-bold z-10` 
                 : `bg-transparent border-transparent ${baseColor} hover:bg-slate-50 hover:border-slate-200 font-medium`
@@ -151,18 +152,22 @@ export default function SocialServiceDashboard() {
   const [dataSource, setDataSource] = useState('connecting'); 
   const [connectionError, setConnectionError] = useState(''); 
   
+  // 全域：篩選設定
   const [globalDateRange, setGlobalDateRange] = useState('1_year'); 
   const [globalStartDate, setGlobalStartDate] = useState('');
   const [globalEndDate, setGlobalEndDate] = useState('');
   
-  const [chartMode, setChartMode] = useState('overview'); 
+  // 顯示模式設定
+  const [chartMode, setChartMode] = useState('overview'); // 'overview', 'general_emotion', 'emotions'
   const [viewMode, setViewMode] = useState('chart'); 
   
+  // 各圖表的獨立分析單位
   const [timeUnitOverview, setTimeUnitOverview] = useState('month'); 
   const [timeUnitService, setTimeUnitService] = useState('month');
   const [timeUnitKeyword, setTimeUnitKeyword] = useState('month');
   
-  const [keywordDateRange, setKeywordDateRange] = useState('year'); 
+  // 關鍵字設定
+  const [keywordDateRange, setKeywordDateRange] = useState('global'); 
   const [selectedKeywords, setSelectedKeywords] = useState([]);
   const [customStartDateKw, setCustomStartDateKw] = useState('');
   const [customEndDateKw, setCustomEndDateKw] = useState('');
@@ -174,7 +179,7 @@ export default function SocialServiceDashboard() {
     
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); 
+      const timeoutId = setTimeout(() => controller.abort(), 10000); 
 
       const response = await fetch('https://socialwelfaremedia.onrender.com/api/news-data', {
           signal: controller.signal
@@ -629,7 +634,6 @@ export default function SocialServiceDashboard() {
                         <button onClick={() => setChartMode('overview')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'overview' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
                           <Layers size={12}/> 聲量
                         </button>
-                        {/* 新增綜合情緒按鈕 */}
                         <button onClick={() => setChartMode('general_emotion')} className={`px-3 py-1.5 text-xs rounded-md flex items-center gap-1 transition-all ${chartMode === 'general_emotion' ? 'bg-white text-emerald-600 shadow-sm font-bold' : 'text-slate-500 hover:text-slate-700'}`}>
                           <TrendingUp size={12}/> 綜合情緒
                         </button>
@@ -668,11 +672,9 @@ export default function SocialServiceDashboard() {
                       </>
                     )}
                     
-                    {/* 獨立出來的綜合情緒圖表 */}
                     {chartMode === 'general_emotion' && (
                       <>
                         <YAxis yAxisId="sentiment" orientation="left" stroke="#10b981" domain={[-1, 1]} tick={{fontSize: 12}} label={{ value: '綜合情緒極性 (-1~1)', angle: -90, position: 'insideLeft', fill: '#10b981', fontSize: 10 }}/>
-                        {/* 0分的基準線，方便觀察輿情正負向 */}
                         <ReferenceLine y={0} yAxisId="sentiment" stroke="#94a3b8" strokeDasharray="3 3" />
                         <Line yAxisId="sentiment" type="monotone" dataKey="avgSentiment" name="綜合情緒" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} activeDot={{ r: 6 }} />
                       </>
@@ -774,9 +776,9 @@ export default function SocialServiceDashboard() {
         {/* 右側：關鍵字探索區 (佔 1/3) */}
         <div className="flex flex-col gap-6">
           
-          {/* 關鍵字文字雲 */}
+          {/* 關鍵字文字雲卡片 */}
           <Card className="flex flex-col h-[400px]">
-            <div className="flex flex-col mb-4 gap-3">
+            <div className="flex flex-col gap-3">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                     <Cloud size={20} className="text-blue-600" />
@@ -813,7 +815,7 @@ export default function SocialServiceDashboard() {
             </div>
 
             {keywordDateRange === 'custom' && (
-                <div className="flex items-center justify-end gap-2 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="flex items-center justify-end gap-2 mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
                     <input 
                         type="date" 
                         value={customStartDateKw} 
@@ -830,15 +832,20 @@ export default function SocialServiceDashboard() {
                 </div>
             )}
 
-            <div className="bg-slate-50 flex-1 rounded-lg p-3 border border-slate-100 relative min-h-0">
-                  <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-slate-400 bg-white px-2 py-1 rounded-full shadow-sm z-20">
+            {/* 【修正排版溢出】替容器加入 overflow-hidden 與內部的 overflow-y-auto */}
+            <div className="bg-slate-50 flex-1 rounded-lg border border-slate-100 relative min-h-0 flex flex-col overflow-hidden mt-3">
+                  {/* 將點擊選取固定在右上角，不受捲動影響 */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-sm z-20 pointer-events-none">
                     <MousePointerClick size={12}/> 點擊選取
                   </div>
-                  <SimpleWordCloud 
-                    words={keywordData.cloudData} 
-                    selectedWords={selectedKeywords}
-                    onWordClick={handleKeywordClick}
-                  />
+                  {/* 可向下捲動的內部容器 */}
+                  <div className="flex-1 overflow-y-auto p-3 pt-10">
+                      <SimpleWordCloud 
+                        words={keywordData.cloudData} 
+                        selectedWords={selectedKeywords}
+                        onWordClick={handleKeywordClick}
+                      />
+                  </div>
             </div>
           </Card>
 
