@@ -11,7 +11,7 @@ import datetime
 import urllib.parse
 import json
 import os
-import shutil  # 新增：用於複製檔案
+import shutil  # 用於複製檔案
 
 # 初始化 Flask 應用
 app = Flask(__name__)
@@ -50,7 +50,7 @@ HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
-# --- 數據分析函數 (恢復完整功能) ---
+# --- 數據分析函數 ---
 
 def analyze_sentiment(text):
     try:
@@ -85,19 +85,23 @@ def parse_google_date(pub_date_str):
 # --- 資料庫邏輯 ---
 
 def load_db():
-    # 取得跟程式碼放在同一個資料夾的本地版 news_db.json 路徑
     local_fallback_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "news_db.json")
     
-    # 【關鍵修復】如果 Render 的付費磁碟 /data 中沒有資料庫，但 GitHub 有傳上來的，就自動搬移過去
-    if not os.path.exists(DB_FILE) and os.path.exists(local_fallback_path):
-        print(f"檢測到原始 news_db.json，正在將您的歷史資料遷移至持久化磁碟 {DB_FILE}...")
-        try:
-            if not os.path.exists("/data"):
-                os.makedirs("/data", exist_ok=True)
-            shutil.copy(local_fallback_path, DB_FILE)
-            print("🎉 歷史資料遷移成功！")
-        except Exception as e:
-            print(f"遷移失敗: {e}")
+    # 【更新的智能遷移邏輯】比較檔案大小，強制覆蓋舊的小檔案
+    if os.path.exists(local_fallback_path):
+        local_size = os.path.getsize(local_fallback_path)
+        disk_size = os.path.getsize(DB_FILE) if os.path.exists(DB_FILE) else 0
+        
+        # 如果磁碟沒有檔案，或者 GitHub 上傳的檔案比磁碟裡的檔案大很多 (超過 100KB 差距)，就強制覆蓋
+        if disk_size == 0 or local_size > (disk_size + 102400):
+            print(f"檢測到 GitHub 上有更完整的 news_db.json (大小: {local_size} bytes)，正在遷移並覆蓋持久化磁碟 {DB_FILE}...")
+            try:
+                if not os.path.exists("/data"):
+                    os.makedirs("/data", exist_ok=True)
+                shutil.copy(local_fallback_path, DB_FILE)
+                print("🎉 歷史龐大資料強制遷移成功！")
+            except Exception as e:
+                print(f"遷移失敗: {e}")
 
     if os.path.exists(DB_FILE):
         try:
@@ -145,7 +149,6 @@ def fetch_google_news_rss():
                 title = item.title.text
                 date_str = parse_google_date(item.pubDate.text)
                 
-                # 使用完整分析功能
                 sentiment = analyze_sentiment(title)
                 
                 existing_data.append({
@@ -181,7 +184,7 @@ def get_news_data():
     if not data or len(data) == 0:
         should_update = True
     else:
-        # 【恢復計時器邏輯】檢查上次更新時間，超過 6 小時就去抓最新 7 天的新聞加進去
+        # 檢查上次更新時間，超過 6 小時就去抓最新 7 天的新聞加進去
         try:
             file_time = os.path.getmtime(DB_FILE)
             if (time.time() - file_time) > CACHE_DURATION:
