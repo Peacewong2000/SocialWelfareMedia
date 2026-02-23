@@ -7,7 +7,7 @@ import { LayoutDashboard, FileText, Activity, Cloud, Search, TrendingUp, Trendin
 
 // --- 1. 模擬數據生成邏輯 (作為備用方案/Fallback) ---
 
-const SERVICE_TYPES = ['安老服務', '青少年服務', '復康服務', '家庭及兒童', '社區發展', '社會保障'];
+const SERVICE_TYPES = ['安老服務', '青少年服務', '復康服務', '家庭及兒童', '社區發展', '社會保障', '勞工及就業', '醫療與精神健康', '少數族裔支援'];
 const SERVICE_COLORS = {
   '安老服務': '#8884d8',
   '青少年服務': '#82ca9d',
@@ -15,16 +15,22 @@ const SERVICE_COLORS = {
   '家庭及兒童': '#ff8042',
   '社區發展': '#0088fe',
   '社會保障': '#00c49f',
-  '其他社福': '#cbd5e1'
+  '勞工及就業': '#14b8a6', // Teal 藍綠色
+  '醫療與精神健康': '#8b5cf6', // Violet 紫色
+  '少數族裔支援': '#f43f5e', // Rose 玫瑰紅
+  '其他社福': '#94a3b8' // 清晰的岩灰色
 };
 
 const KEYWORDS_BASE = {
   '安老服務': ['長者', '安老院', '樂齡科技', '獨居', '照顧者', '認知障礙', '醫療券'],
   '青少年服務': ['學生', '情緒健康', '生涯規劃', '外展', '童軍', '網癮', '青年宿舍'],
-  '復康服務': ['殘疾人士', '共融', '庇護工場', '無障礙', '精神健康', '康復'],
+  '復康服務': ['殘疾人士', '共融', '庇護工場', '無障礙', '康復'],
   '家庭及兒童': ['虐兒', '寄養', '單親', '家庭關係', '社工', '保護兒童'],
   '社區發展': ['過渡性房屋', '關愛隊', '社區客廳', '扶貧', '基層', '劏房'],
-  '社會保障': ['綜援', '高齡津貼', '施政報告', '財政預算案', '福利金']
+  '社會保障': ['綜援', '高齡津貼', '施政報告', '財政預算案', '福利金'],
+  '勞工及就業': ['就業', '失業', '強積金', '最低工資', '職安'],
+  '醫療與精神健康': ['精神', '情緒', '抑鬱', '輔導', '心理'],
+  '少數族裔支援': ['少數族裔', '非華語', '南亞裔', '新來港']
 };
 
 const generateMockData = (days = 1825) => {
@@ -165,7 +171,7 @@ export default function SocialServiceDashboard() {
   const [timeUnitService, setTimeUnitService] = useState('month');
   const [timeUnitKeyword, setTimeUnitKeyword] = useState('month');
   
-  // 關鍵字設定 (已移除時間過濾，完全同步全域設定)
+  // 關鍵字設定
   const [selectedKeywords, setSelectedKeywords] = useState([]);
 
   const fetchData = async () => {
@@ -177,6 +183,7 @@ export default function SocialServiceDashboard() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); 
 
+      // 請求 Render 上面的 API
       const response = await fetch('https://socialwelfaremedia.onrender.com/api/news-data', {
           signal: controller.signal
       });
@@ -349,7 +356,6 @@ export default function SocialServiceDashboard() {
   const keywordData = useMemo(() => {
     const totalStats = {};
     
-    // 直接使用全域過濾後的數據 (移除獨立的時間過濾)
     filteredData.forEach(item => {
       const stopWords = ['香港', '社福', '服務', '報導', '相關']; 
       item.keywords.forEach(kw => {
@@ -387,7 +393,6 @@ export default function SocialServiceDashboard() {
     };
   }, [filteredData, timeUnitKeyword]);
 
-  // 當資料或過濾範圍變動時，重置選取的關鍵字
   useEffect(() => {
     if (keywordData.defaultTop5.length > 0) {
         setSelectedKeywords(keywordData.defaultTop5);
@@ -567,7 +572,7 @@ export default function SocialServiceDashboard() {
       </div>
 
       {/* ==========================================================
-          區塊 2：輿情線性分析 (改為 100% 滿版寬度)
+          區塊 2：輿情線性分析 (100% 滿版寬度)
           ========================================================== */}
       <Card className="flex flex-col h-[450px] mb-6">
         <div className="flex flex-col xl:flex-row justify-between xl:items-start gap-4 mb-4">
@@ -701,15 +706,15 @@ export default function SocialServiceDashboard() {
           ========================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* 左半部：服務類別趨勢 (自動拉長高度對齊右側) */}
+        {/* 左半部：服務類別趨勢 (自動拉長高度對齊右側，100%滿版堆疊面積圖) */}
         <Card className="flex flex-col h-full min-h-[500px]">
           <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div>
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                 <BarChart2 size={20} className="text-blue-600" />
-                服務類別趨勢
+                服務類別趨勢佔比
               </h2>
-              <p className="text-xs text-slate-400 mt-1">追蹤各類別的報導量變化</p>
+              <p className="text-xs text-slate-400 mt-1">追蹤各社福議題在媒體版面上的百分比變化</p>
             </div>
             <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-400">分析單位:</span>
@@ -719,13 +724,26 @@ export default function SocialServiceDashboard() {
 
           <div className="flex-1 w-full min-h-0 mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              {/* 加上 key 強迫圖表在時間單位切換時重新計算 Y 軸 */}
-              <AreaChart key={timeUnitService} data={serviceTrendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
+              {/* stackOffset="expand" 用於轉換為 100% 堆疊面積圖 */}
+              <AreaChart key={timeUnitService} data={serviceTrendData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }} stackOffset="expand">
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" tickMargin={10} minTickGap={20}/>
-                <YAxis tick={{fontSize: 11}} width={40} />
+                
+                {/* Y 軸轉換為百分比顯示 */}
+                <YAxis tickFormatter={(tick) => `${(tick * 100).toFixed(0)}%`} tick={{fontSize: 11}} width={45} />
+                
+                {/* 自訂 Tooltip：同時顯示真實數量與百分比佔比 */}
                 <RechartsTooltip 
                   labelFormatter={(label, payload) => payload && payload.length > 0 ? payload[0].payload.fullLabel : label}
+                  formatter={(value, name, props) => {
+                     const payloadData = props.payload;
+                     let total = 0;
+                     Object.keys(SERVICE_COLORS).forEach(k => {
+                         total += (payloadData[k] || 0);
+                     });
+                     const percent = total > 0 ? ((value / total) * 100).toFixed(1) + '%' : '0%';
+                     return [`${value} 篇 (${percent})`, name];
+                  }}
                   contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                 />
                 <Legend wrapperStyle={{fontSize: '11px', paddingTop: '10px'}}/>
@@ -800,7 +818,6 @@ export default function SocialServiceDashboard() {
               <div className="flex-1 w-full min-h-0 mt-2">
                   {selectedKeywords.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      {/* 加上 key 強迫圖表在時間單位切換時重新計算 Y 軸 */}
                       <LineChart key={timeUnitKeyword} data={keywordData.trendData} margin={{ top: 10, right: 20, left: -20, bottom: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                         <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" minTickGap={20} tickMargin={10}/>
