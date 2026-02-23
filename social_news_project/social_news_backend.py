@@ -62,14 +62,18 @@ def extract_keywords(text):
     try: return jieba.analyse.extract_tags(text, topK=5)
     except: return []
 
+# 【全新升級的分類邏輯】
 def classify_service_type(text):
     text = text.lower()
-    if any(k in text for k in ['老人', '長者', '安老', '認知障礙', '樂齡']): return '安老服務'
-    elif any(k in text for k in ['青年', '學生', '童軍', '外展', '學童']): return '青少年服務'
-    elif any(k in text for k in ['殘疾', '康復', '精神', '無障礙', '智障']): return '復康服務'
-    elif any(k in text for k in ['綜援', '津貼', '福利金', '財政預算', '施政報告', '扶貧']): return '社會保障'
-    elif any(k in text for k in ['家庭', '虐兒', '親子', '婦女', '幼兒']): return '家庭及兒童'
-    elif any(k in text for k in ['房屋', '劏房', '社區', '關愛隊']): return '社區發展'
+    if any(k in text for k in ['精神', '情緒', '抑鬱', '醫療', '輔導', '心理', '健康']): return '醫療與精神健康'
+    elif any(k in text for k in ['勞工', '就業', '失業', '職安', '強積金', '最低工資', '打工仔', '僱員']): return '勞工及就業'
+    elif any(k in text for k in ['少數族裔', '非華語', '南亞裔', '新移民', '新來港']): return '少數族裔支援'
+    elif any(k in text for k in ['老人', '長者', '安老', '認知障礙', '樂齡', '護老', '銀髮']): return '安老服務'
+    elif any(k in text for k in ['青年', '學生', '童軍', '外展', '學童', '青少年', 'dse']): return '青少年服務'
+    elif any(k in text for k in ['殘疾', '康復', '無障礙', '智障', '特殊教育', 'sen', '展能']): return '復康服務'
+    elif any(k in text for k in ['綜援', '津貼', '福利金', '財政預算', '施政報告', '扶貧', '派糖']): return '社會保障'
+    elif any(k in text for k in ['家庭', '虐兒', '親子', '婦女', '幼兒', '家暴', '托兒']): return '家庭及兒童'
+    elif any(k in text for k in ['房屋', '劏房', '社區', '關愛隊', '公屋', '基層', '無家者']): return '社區發展'
     else: return '其他社福'
 
 def parse_google_date(pub_date_str):
