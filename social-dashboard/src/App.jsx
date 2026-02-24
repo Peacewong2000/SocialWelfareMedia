@@ -33,57 +33,6 @@ const KEYWORDS_BASE = {
   '少數族裔支援': ['少數族裔', '非華語', '南亞裔', '新來港']
 };
 
-const generateMockData = (days = 1825) => {
-  const data = [];
-  const endDate = new Date();
-  
-  for (let i = days; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(endDate.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const newsCount = Math.floor(Math.random() * 5) + 1; 
-    
-    for (let j = 0; j < newsCount; j++) {
-      let typeIndex = Math.floor(Math.random() * SERVICE_TYPES.length);
-      if (date.getDate() < 5 && Math.random() > 0.6) typeIndex = 5; 
-      const type = SERVICE_TYPES[typeIndex];
-      let baseSentiment = (Math.random() * 2) - 0.85; 
-      if (type === '安老服務') baseSentiment += 0.3; 
-      if (type === '青少年服務') baseSentiment += 0.1;
-      if (type === '社會保障') baseSentiment -= 0.2; 
-      const sentiment = Math.max(-1, Math.min(1, baseSentiment));
-      const isPositive = sentiment > 0;
-      
-      const emotions = {
-        joy: isPositive ? Math.random() * 0.6 + 0.3 : Math.random() * 0.2,
-        trust: isPositive ? Math.random() * 0.5 + 0.3 : Math.random() * 0.3,
-        anticipation: Math.random() * 0.6 + 0.1,
-        sadness: !isPositive ? Math.random() * 0.6 + 0.3 : Math.random() * 0.2,
-        anger: !isPositive ? Math.random() * 0.5 + 0.1 : Math.random() * 0.1,
-        fear: !isPositive ? Math.random() * 0.4 + 0.1 : Math.random() * 0.1,
-      };
-
-      const possibleKeywords = KEYWORDS_BASE[type] || ['社福'];
-      const keywords = [];
-      const numKeywords = Math.floor(Math.random() * 3) + 2;
-      for(let k=0; k<numKeywords; k++) {
-        keywords.push(possibleKeywords[Math.floor(Math.random() * possibleKeywords.length)]);
-      }
-
-      data.push({
-        id: `${dateStr}-${j}`,
-        date: dateStr,
-        type: type,
-        sentiment: sentiment,
-        emotions: emotions,
-        title: `關於${type}的相關報導 - ${keywords[0]}`,
-        keywords: keywords
-      });
-    }
-  }
-  return data;
-};
-
 // --- 2. 輔助組件 ---
 
 const Card = ({ children, className = "" }) => (
@@ -200,7 +149,7 @@ export default function SocialServiceDashboard() {
           setDataSource('real');
       } else {
           setConnectionError("連線成功，但目前資料庫為空");
-          setRawData(generateMockData(1825));
+          setRawData([]); 
           setDataSource('empty'); 
       }
 
@@ -210,8 +159,8 @@ export default function SocialServiceDashboard() {
       else msg = error.message;
       
       setConnectionError(msg);
-      setRawData(generateMockData(1825)); 
-      setDataSource('mock');
+      setRawData([]); // 徹底移除假資料，改為空陣列
+      setDataSource('error'); // 將狀態改為錯誤
     } finally {
       setLoading(false);
       const end = new Date();
@@ -458,12 +407,12 @@ export default function SocialServiceDashboard() {
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <p className="text-slate-500 text-sm mr-2">全方位動態追蹤 • 趨勢視覺化</p>
             
-            <div className={`group relative text-xs px-2 py-1 rounded-full flex items-center gap-1 cursor-help ${dataSource === 'real' ? 'bg-green-100 text-green-700' : dataSource === 'empty' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+            <div className={`group relative text-xs px-2 py-1 rounded-full flex items-center gap-1 cursor-help ${dataSource === 'real' ? 'bg-green-100 text-green-700' : dataSource === 'empty' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
                 {dataSource === 'real' ? <CheckCircle2 size={12}/> : dataSource === 'empty' ? <Database size={12}/> : <AlertCircle size={12}/>}
                 <span>
                   {dataSource === 'real' ? `已連線 (資料筆數: ${rawData.length})` 
                    : dataSource === 'empty' ? '已連線 (資料庫為空)' 
-                   : '演示模式 (備用數據)'}
+                   : '連線失敗 (無資料)'}
                 </span>
                 
                 {dataSource !== 'real' && (
