@@ -6,3 +6,15 @@ jieba
 lxml
 snownlp
 gunicorn
+google-generativeai
+*(原本的 flask, requests 等依舊保留)*
+
+### 第三步：在 Render 設定 Gemini API Key (最重要！)
+1. 請前往 [Google AI Studio](https://aistudio.google.com/) (您可能需要開一下 VPN 才能進入網頁並申請，但部署後伺服器不需要 VPN)。
+2. 點擊左側的 **"Get API key"**，建立並複製一把您的專屬金鑰 (一長串英文數字)。
+3. 登入 **Render** 的控制台，進入您的 Web Service 專案。
+4. 點擊左側選單的 **"Environment"**。
+5. 點擊 **"Add Environment Variable"**：
+   * **Key** 輸入：`GEMINI_API_KEY`
+   * **Value** 輸入：`(貼上您剛剛複製的 API Key)`
+6. 儲存並觸發重新部署 (Manual Deploy)。
