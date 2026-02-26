@@ -17,9 +17,12 @@ import shutil
 import google.generativeai as genai
 
 # 初始化 Flask 應用
+# 初始化 Flask 應用
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-CORS(app)
+
+# 【關鍵修復】允許所有來源的跨域請求，解決前端抓不到資料的問題
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --- [關鍵設定] 系統參數與環境變數 ---
 DB_FILE = "/data/news_db.json"
