@@ -11,59 +11,100 @@ import datetime
 import urllib.parse
 import json
 import os
-import shutil  # 用於複製檔案
+import shutil
+
+# 匯入 Google Gemini API 套件
+import google.generativeai as genai
 
 # 初始化 Flask 應用
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 CORS(app)
 
-# --- [關鍵設定] 持久化磁碟路徑 ---
+# --- [關鍵設定] 系統參數與環境變數 ---
 DB_FILE = "/data/news_db.json"
-
-# 優化記憶體使用：預先初始化 jieba (已移除會導致錯誤的 enable_parallel)
-jieba.initialize()
-
 CACHE_DURATION = 3600 * 6  # 6 小時更新一次
 
+# 預先初始化 jieba (作為 AI 失敗時的備用方案)
+jieba.initialize()
+
+# 設定 Gemini API
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    # 強制 Gemini 回傳 JSON 格式
+    generation_config = {"response_mime_type": "application/json"}
+    # 使用 2.5 flash 模型，速度最快、免費額度極高
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash', generation_config=generation_config)
+    print("✅ Gemini AI 引擎已啟動！")
+else:
+    gemini_model = None
+    print("⚠️ 未偵測到 GEMINI_API_KEY，將使用傳統演算法運作。")
+
 SEARCH_KEYWORDS = [
-    # 原有核心關鍵字
     "香港 社福", "香港 安老院 服務", "香港 青少年 中心", "香港 社工", 
     "香港 殘疾人士 津貼", "香港 照顧者 支援", "香港 過渡性房屋", 
     "香港 綜援 金額", "香港 樂齡科技", "香港 精神健康 支援",
-    
-    # [新增] 基層與房屋支援
     "香港 劏房 支援", "香港 社區客廳", "香港 扶貧 政策", 
-    
-    # [新增] 兒童與家庭福利
     "香港 兒童 保護", "香港 虐兒 關注", "香港 托兒 服務", "香港 單親 支援",
-    
-    # [新增] 特殊群體與新興政策
     "香港 SEN 學童", "香港 少數族裔 福利", "香港 關愛隊", 
-    
-    # [新增] 長者社區照顧
     "香港 居家安老", "香港 長者 醫療券"
 ]
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
 }
 
-# --- 數據分析函數 ---
+# ==========================================================
+# 🧠 核心：Gemini AI 綜合分析引擎
+# ==========================================================
+def analyze_with_gemini(title):
+    if not gemini_model:
+        return None
+        
+    prompt = f"""
+    你是一個專業的香港社福政策與新聞分析專家。請分析以下新聞標題，並以 JSON 格式回傳。
+    新聞標題：「{title}」
 
-def analyze_sentiment(text):
+    請嚴格遵守以下 JSON 格式回傳：
+    {{
+        "is_social_welfare": boolean, // 判斷這是否真的是關於香港社會福利、政策、基層民生、弱勢社群的新聞。如果是吃喝玩樂、旅遊酒店推介、無關的商業廣告請設為 false。
+        "type": string, // 必須是以下之一：'安老服務', '青少年服務', '復康服務', '家庭及兒童', '社區發展', '社會保障', '勞工及就業', '醫療與精神健康', '少數族裔支援', '其他社福'
+        "sentiment": float, // 情緒極性：-1.0 (極度負面/悲劇/社會慘案) 到 1.0 (極度正面/惠民政策/撥款增加)。客觀的政策推行通常為 0.2 到 0.6。
+        "emotions": {{
+            "joy": float, // 0.0 到 1.0
+            "sadness": float,
+            "trust": float, // 政府政策、社福機構通常具有較高的 trust
+            "anticipation": float,
+            "anger": float,
+            "fear": float
+        }},
+        "keywords": [string, string, string, string, string] // 請提取 5 個精準的關鍵字 (不含'香港'或'新聞')
+    }}
+    """
     try:
-        if not text: return 0
+        response = gemini_model.generate_content(prompt)
+        data = json.loads(response.text)
+        return data
+    except Exception as e:
+        print(f"Gemini API 分析失敗，自動切換至傳統演算法: {e}")
+        return None
+
+# ==========================================================
+# 備用：傳統演算法 (當 AI 異常時自動接手)
+# ==========================================================
+def fallback_analyze_sentiment(text):
+    try:
         s = SnowNLP(text)
-        return (s.sentiments - 0.5) * 2
+        base_score = (s.sentiments - 0.5) * 2
+        positive_keywords = ['優惠', '津貼', '支援', '資助', '免費', '受惠', '推介', '撥款', '改善', '增加', '福利', '預算案', '經濟', '發展', '民生', '轉虧為盈', '穩中求進', '社區', '創科', '建設', '進步', '聚焦', '引路', '共融', '關愛', '復甦', '紓困']
+        negative_keywords = ['虐兒', '家暴', '慘劇', '意外', '倒閉', '失業', '悲劇', '裁員', '騙案', '被捕', '死亡', '罪案', '非禮', '自殺', '破產']
+        if any(k in text for k in positive_keywords): base_score += 1.2  
+        if any(k in text for k in negative_keywords): base_score -= 1.0  
+        return round(max(-1.0, min(1.0, base_score)), 2)
     except: return 0
 
-def extract_keywords(text):
-    try: return jieba.analyse.extract_tags(text, topK=5)
-    except: return []
-
-# 【全新升級的分類邏輯】
-def classify_service_type(text):
+def fallback_classify_service_type(text):
     text = text.lower()
     if any(k in text for k in ['精神', '情緒', '抑鬱', '醫療', '輔導', '心理', '健康']): return '醫療與精神健康'
     elif any(k in text for k in ['勞工', '就業', '失業', '職安', '強積金', '最低工資', '打工仔', '僱員']): return '勞工及就業'
@@ -76,6 +117,7 @@ def classify_service_type(text):
     elif any(k in text for k in ['房屋', '劏房', '社區', '關愛隊', '公屋', '基層', '無家者']): return '社區發展'
     else: return '其他社福'
 
+# --- 基礎資料庫與日期邏輯 ---
 def parse_google_date(pub_date_str):
     formats = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%d", "%d %b %Y"]
     for fmt in formats:
@@ -85,55 +127,41 @@ def parse_google_date(pub_date_str):
         except ValueError: continue
     return datetime.date.today().isoformat()
 
-# --- 資料庫邏輯 ---
-
 def load_db():
     local_fallback_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "news_db.json")
-    
-    # 【更新的智能遷移邏輯】比較檔案大小，強制覆蓋舊的小檔案
     if os.path.exists(local_fallback_path):
         local_size = os.path.getsize(local_fallback_path)
         disk_size = os.path.getsize(DB_FILE) if os.path.exists(DB_FILE) else 0
-        
-        # 如果磁碟沒有檔案，或者 GitHub 上傳的檔案比磁碟裡的檔案大很多 (超過 100KB 差距)，就強制覆蓋
         if disk_size == 0 or local_size > (disk_size + 102400):
-            print(f"檢測到 GitHub 上有更完整的 news_db.json (大小: {local_size} bytes)，正在遷移並覆蓋持久化磁碟 {DB_FILE}...")
             try:
-                if not os.path.exists("/data"):
-                    os.makedirs("/data", exist_ok=True)
+                if not os.path.exists("/data"): os.makedirs("/data", exist_ok=True)
                 shutil.copy(local_fallback_path, DB_FILE)
-                print("🎉 歷史龐大資料強制遷移成功！")
-            except Exception as e:
-                print(f"遷移失敗: {e}")
-
+            except: pass
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            with open(DB_FILE, 'r', encoding='utf-8') as f: return json.load(f)
         except: return None
     return []
 
 def save_db(data):
     try:
-        if not os.path.exists("/data"):
-            os.makedirs("/data", exist_ok=True)
-            
+        if not os.path.exists("/data"): os.makedirs("/data", exist_ok=True)
         with open(DB_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"數據已安全儲存至持久磁碟: {DB_FILE}")
-    except Exception as e:
-        print(f"磁碟寫入失敗: {e}")
+    except: pass
 
+# ==========================================================
+# 爬蟲主程式
+# ==========================================================
 def fetch_google_news_rss():
     existing_data = load_db() or []
     seen_links = set(item['link'] for item in existing_data)
     
-    # 只抓取過去 7 天的「最新新聞」，減輕伺服器負擔
     today = datetime.date.today()
     one_week_ago = today - datetime.timedelta(days=7)
     date_filter = f"after:{one_week_ago.isoformat()}"
 
-    print(f"正在執行深度數據分析與爬網 (只抓取 {one_week_ago} 之後的增量數據)...")
+    print(f"啟動智慧爬蟲 (時間範圍: {one_week_ago} 之後)...")
     new_items_count = 0
     
     for keyword in SEARCH_KEYWORDS:
@@ -146,37 +174,66 @@ def fetch_google_news_rss():
             for item in items:
                 link = item.link.text
                 if link in seen_links: continue
-                
-                seen_links.add(link)
-                new_items_count += 1
                 title = item.title.text
-                date_str = parse_google_date(item.pubDate.text)
                 
-                sentiment = analyze_sentiment(title)
+                # ==========================================
+                # 🚀 透過 Gemini AI 進行一站式分析
+                # ==========================================
+                ai_data = analyze_with_gemini(title)
                 
-                existing_data.append({
-                    "id": f"news-{int(time.time()*1000)}-{random.randint(0, 1000)}",
-                    "date": date_str,
-                    "type": classify_service_type(title),
-                    "sentiment": round(sentiment, 2),
-                    "emotions": {
+                if ai_data:
+                    # 1. 智慧過濾：如果 AI 判定這不是社福新聞 (例如酒店推介)，直接捨棄！
+                    if not ai_data.get("is_social_welfare", True):
+                        print(f"🗑️ AI 過濾無關新聞: {title}")
+                        continue
+                        
+                    # 2. 獲取 AI 生成的精準數據
+                    news_type = ai_data.get("type", "其他社福")
+                    sentiment = ai_data.get("sentiment", 0.0)
+                    emotions = ai_data.get("emotions", {
+                        "joy": 0.1, "sadness": 0.1, "trust": 0.5, "anticipation": 0.5, "anger": 0.1, "fear": 0.1
+                    })
+                    keywords = ai_data.get("keywords", [])
+                else:
+                    # 如果 AI 失敗 (例如額度用盡)，自動使用傳統備用方案
+                    # 傳統方案只能靠字詞硬過濾吃喝玩樂
+                    exclude_words = ["酒店", "自助餐", "旅遊", "打卡", "演唱會"]
+                    if any(w in title for w in exclude_words): continue
+                        
+                    news_type = fallback_classify_service_type(title)
+                    sentiment = fallback_analyze_sentiment(title)
+                    emotions = {
                         "joy": random.uniform(0.1, 0.8) if sentiment > 0 else 0.1,
                         "sadness": random.uniform(0.1, 0.8) if sentiment < 0 else 0.1,
                         "trust": random.uniform(0.3, 0.7),
                         "anticipation": random.uniform(0.2, 0.6),
                         "anger": random.uniform(0, 0.3),
                         "fear": random.uniform(0, 0.2)
-                    },
+                    }
+                    try: keywords = jieba.analyse.extract_tags(title, topK=5)
+                    except: keywords = []
+                # ==========================================
+
+                seen_links.add(link)
+                new_items_count += 1
+                date_str = parse_google_date(item.pubDate.text)
+                
+                existing_data.append({
+                    "id": f"news-{int(time.time()*1000)}-{random.randint(0, 1000)}",
+                    "date": date_str,
+                    "type": news_type,
+                    "sentiment": round(sentiment, 2),
+                    "emotions": emotions,
                     "title": title,
-                    "keywords": extract_keywords(title),
+                    "keywords": keywords,
                     "link": link
                 })
-            time.sleep(0.5)
+            time.sleep(1) # 增加間隔保護 API
         except: continue
             
     existing_data.sort(key=lambda x: x['date'], reverse=True)
     save_db(existing_data)
-    print(f"增量更新完成，本次新增 {new_items_count} 筆，資料庫總計 {len(existing_data)} 筆。")
+    print(f"更新完成！本次新增 {new_items_count} 筆。")
     return existing_data
 
 @app.route('/api/news-data', methods=['GET'])
@@ -187,23 +244,21 @@ def get_news_data():
     if not data or len(data) == 0:
         should_update = True
     else:
-        # 檢查上次更新時間，超過 6 小時就去抓最新 7 天的新聞加進去
         try:
-            file_time = os.path.getmtime(DB_FILE)
-            if (time.time() - file_time) > CACHE_DURATION:
+            if (time.time() - os.path.getmtime(DB_FILE)) > CACHE_DURATION:
                 should_update = True
-        except:
-            should_update = True
+        except: should_update = True
             
     if should_update:
-        print("觸發自動增量更新...")
+        print("觸發自動更新...")
         data = fetch_google_news_rss()
         
     return jsonify(data)
 
 @app.route('/')
 def home():
-    return "Social News Analysis API (Full Mode with Disk) is running."
+    status = "Gemini AI" if gemini_model else "傳統算法 (SnowNLP)"
+    return f"Social News Analysis API is running. Current Engine: {status}"
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
