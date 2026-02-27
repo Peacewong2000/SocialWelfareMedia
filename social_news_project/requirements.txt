@@ -6,4 +6,3 @@ jieba
 lxml
 snownlp
 gunicorn
-google-generativeai
