@@ -34,7 +34,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     generation_config = {"response_mime_type": "application/json"}
-    gemini_model = genai.GenerativeModel('gemini-2.5-flash', generation_config=generation_config)
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash', generation_config=generation_config)
     print("✅ Gemini AI 引擎已啟動！")
 else:
     gemini_model = None
