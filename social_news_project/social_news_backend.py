@@ -12,17 +12,15 @@ import urllib.parse
 import json
 import os
 import shutil
+import threading  # 用於背景執行緒，讓網頁秒速載入
 
 # 匯入 Google Gemini API 套件
 import google.generativeai as genai
 
 # 初始化 Flask 應用
-# 初始化 Flask 應用
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-
-# 【關鍵修復】允許所有來源的跨域請求，解決前端抓不到資料的問題
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app)
 
 # --- [關鍵設定] 系統參數與環境變數 ---
 DB_FILE = "/data/news_db.json"
@@ -37,7 +35,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     # 強制 Gemini 回傳 JSON 格式
     generation_config = {"response_mime_type": "application/json"}
-    # 使用 2.5 flash 模型，速度最快、免費額度極高
+    # 使用 2.5 flash 模型，速度快且免費額度高
     gemini_model = genai.GenerativeModel('gemini-2.5-flash', generation_config=generation_config)
     print("✅ Gemini AI 引擎已啟動！")
 else:
@@ -57,6 +55,9 @@ SEARCH_KEYWORDS = [
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
 }
+
+# 全域變數：用來記錄目前是否「正在背景更新中」，避免重複觸發
+is_updating = False
 
 # ==========================================================
 # 🧠 核心：Gemini AI 綜合分析引擎
@@ -120,7 +121,7 @@ def fallback_classify_service_type(text):
     elif any(k in text for k in ['房屋', '劏房', '社區', '關愛隊', '公屋', '基層', '無家者']): return '社區發展'
     else: return '其他社福'
 
-# --- 基礎資料庫與日期邏輯 ---
+# --- 基礎資料庫邏輯 ---
 def parse_google_date(pub_date_str):
     formats = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%d", "%d %b %Y"]
     for fmt in formats:
@@ -154,7 +155,7 @@ def save_db(data):
     except: pass
 
 # ==========================================================
-# 爬蟲主程式
+# 爬蟲主程式 (已加入 API 速率限制保護)
 # ==========================================================
 def fetch_google_news_rss():
     existing_data = load_db() or []
@@ -167,14 +168,25 @@ def fetch_google_news_rss():
     print(f"啟動智慧爬蟲 (時間範圍: {one_week_ago} 之後)...")
     new_items_count = 0
     
+    # 【關鍵防護】每次背景更新最多只處理 15 篇，保護 API 額度與伺服器效能
+    max_process_limit = 15 
+    
     for keyword in SEARCH_KEYWORDS:
+        if new_items_count >= max_process_limit:
+            print("達到單次處理上限，為保護伺服器與 API 額度提早結束。未處理新聞將於下次繼續。")
+            break
+            
         query = f"{keyword} {date_filter}"
         url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=zh-HK&gl=HK&ceid=HK:zh-Hant"
         try:
             response = requests.get(url, headers=HEADERS, timeout=15)
             soup = BeautifulSoup(response.content, features='xml')
             items = soup.findAll('item')
+            
             for item in items:
+                if new_items_count >= max_process_limit:
+                    break
+                    
                 link = item.link.text
                 if link in seen_links: continue
                 title = item.title.text
@@ -185,12 +197,12 @@ def fetch_google_news_rss():
                 ai_data = analyze_with_gemini(title)
                 
                 if ai_data:
-                    # 1. 智慧過濾：如果 AI 判定這不是社福新聞 (例如酒店推介)，直接捨棄！
+                    # 智慧過濾：如果是非社福新聞，直接捨棄！
                     if not ai_data.get("is_social_welfare", True):
                         print(f"🗑️ AI 過濾無關新聞: {title}")
+                        seen_links.add(link) 
                         continue
                         
-                    # 2. 獲取 AI 生成的精準數據
                     news_type = ai_data.get("type", "其他社福")
                     sentiment = ai_data.get("sentiment", 0.0)
                     emotions = ai_data.get("emotions", {
@@ -198,10 +210,11 @@ def fetch_google_news_rss():
                     })
                     keywords = ai_data.get("keywords", [])
                 else:
-                    # 如果 AI 失敗 (例如額度用盡)，自動使用傳統備用方案
-                    # 傳統方案只能靠字詞硬過濾吃喝玩樂
+                    # 如果 AI 失敗，自動切回傳統備用方案
                     exclude_words = ["酒店", "自助餐", "旅遊", "打卡", "演唱會"]
-                    if any(w in title for w in exclude_words): continue
+                    if any(w in title for w in exclude_words): 
+                        seen_links.add(link)
+                        continue
                         
                     news_type = fallback_classify_service_type(title)
                     sentiment = fallback_analyze_sentiment(title)
@@ -231,37 +244,69 @@ def fetch_google_news_rss():
                     "keywords": keywords,
                     "link": link
                 })
-            time.sleep(1) # 增加間隔保護 API
-        except: continue
+                
+                # 【關鍵防護】強制限速：每處理完一篇等待 4.5 秒 (防 429 Error)
+                print(f"待機中... (API速率限制保護: 4.5秒)")
+                time.sleep(4.5)
+
+        except Exception as e:
+            print(f"抓取 {keyword} 時發生錯誤: {e}")
+            continue
             
     existing_data.sort(key=lambda x: x['date'], reverse=True)
     save_db(existing_data)
     print(f"更新完成！本次新增 {new_items_count} 筆。")
     return existing_data
 
+# ==========================================================
+# 【新增】背景執行緒包裝函數 (附帶安全解鎖機制)
+# ==========================================================
+def background_update_task():
+    global is_updating
+    is_updating = True
+    print("啟動背景非同步更新執行緒...")
+    try:
+        fetch_google_news_rss()
+    except Exception as e:
+        print(f"背景更新發生嚴重錯誤: {e}")
+    finally:
+        # 無論成功或失敗，最後一定要解開鎖定，確保下次可以再觸發
+        is_updating = False
+        print("背景執行緒已結束，安全鎖已釋放。")
+
+# ==========================================================
+# API 路由
+# ==========================================================
 @app.route('/api/news-data', methods=['GET'])
 def get_news_data():
-    data = load_db()
+    global is_updating
+    data = load_db() or []
     should_update = False
     
-    if not data or len(data) == 0:
+    if len(data) == 0:
         should_update = True
     else:
         try:
             if (time.time() - os.path.getmtime(DB_FILE)) > CACHE_DURATION:
                 should_update = True
-        except: should_update = True
+        except: 
+            should_update = True
             
-    if should_update:
-        print("觸發自動更新...")
-        data = fetch_google_news_rss()
+    # 【關鍵修改】如果需要更新，且目前沒有其他執行緒在更新中
+    if should_update and not is_updating:
+        print("觸發背景自動更新！(使用者將立即收到歷史資料，無須等待)")
+        # 建立並啟動背景執行緒去跑爬蟲與 AI，不卡住前端的回應
+        thread = threading.Thread(target=background_update_task)
+        thread.start()
         
+    # 直接「秒速」回傳現有的資料庫內容給讀者
     return jsonify(data)
 
 @app.route('/')
 def home():
     status = "Gemini AI" if gemini_model else "傳統算法 (SnowNLP)"
-    return f"Social News Analysis API is running. Current Engine: {status}"
+    updating_status = " (背景正在抓取最新資料中...)" if is_updating else " (待命狀態)"
+    return f"Social News Analysis API is running.<br>Current Engine: {status}<br>Status: {updating_status}"
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
