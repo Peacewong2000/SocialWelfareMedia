@@ -307,7 +307,7 @@ def test_gemini_live():
                 "3_Gemini_分析結果": ai_data if ai_data else "分析失敗 (可能遇到 API 限制)"
             })
             
-            time.sleep(4.5) # 遵守 API 限制
+            time.sleep(7.0) # 遵守 API 限制
             
         return jsonify({
             "status": "success",
