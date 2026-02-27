@@ -12,7 +12,7 @@ import urllib.parse
 import json
 import os
 import shutil
-import threading  # 用於背景執行緒，讓網頁秒速載入
+import threading
 
 # 匯入 Google Gemini API 套件
 import google.generativeai as genai
@@ -26,16 +26,14 @@ CORS(app)
 DB_FILE = "/data/news_db.json"
 CACHE_DURATION = 3600 * 6  # 6 小時更新一次
 
-# 預先初始化 jieba (作為 AI 失敗時的備用方案)
+# 預先初始化 jieba (作為備用)
 jieba.initialize()
 
 # 設定 Gemini API
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # 強制 Gemini 回傳 JSON 格式
     generation_config = {"response_mime_type": "application/json"}
-    # 使用 2.5 flash 模型，速度快且免費額度高
     gemini_model = genai.GenerativeModel('gemini-2.5-flash', generation_config=generation_config)
     print("✅ Gemini AI 引擎已啟動！")
 else:
@@ -56,7 +54,7 @@ HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
 }
 
-# 全域變數：用來記錄目前是否「正在背景更新中」，避免重複觸發
+# 狀態鎖：防止重複觸發背景更新
 is_updating = False
 
 # ==========================================================
@@ -91,11 +89,11 @@ def analyze_with_gemini(title):
         data = json.loads(response.text)
         return data
     except Exception as e:
-        print(f"Gemini API 分析失敗，自動切換至傳統演算法: {e}")
+        print(f"Gemini API 分析失敗: {e}")
         return None
 
 # ==========================================================
-# 備用：傳統演算法 (當 AI 異常時自動接手)
+# 備用：傳統演算法
 # ==========================================================
 def fallback_analyze_sentiment(text):
     try:
@@ -121,7 +119,6 @@ def fallback_classify_service_type(text):
     elif any(k in text for k in ['房屋', '劏房', '社區', '關愛隊', '公屋', '基層', '無家者']): return '社區發展'
     else: return '其他社福'
 
-# --- 基礎資料庫邏輯 ---
 def parse_google_date(pub_date_str):
     formats = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%d", "%d %b %Y"]
     for fmt in formats:
@@ -155,7 +152,7 @@ def save_db(data):
     except: pass
 
 # ==========================================================
-# 爬蟲主程式 (已加入 API 速率限制保護)
+# 爬蟲主程式 (背景執行)
 # ==========================================================
 def fetch_google_news_rss():
     existing_data = load_db() or []
@@ -165,16 +162,12 @@ def fetch_google_news_rss():
     one_week_ago = today - datetime.timedelta(days=7)
     date_filter = f"after:{one_week_ago.isoformat()}"
 
-    print(f"啟動智慧爬蟲 (時間範圍: {one_week_ago} 之後)...")
+    print("啟動智慧爬蟲 (背景執行中)...")
     new_items_count = 0
-    
-    # 【關鍵防護】每次背景更新最多只處理 15 篇，保護 API 額度與伺服器效能
     max_process_limit = 15 
     
     for keyword in SEARCH_KEYWORDS:
-        if new_items_count >= max_process_limit:
-            print("達到單次處理上限，為保護伺服器與 API 額度提早結束。未處理新聞將於下次繼續。")
-            break
+        if new_items_count >= max_process_limit: break
             
         query = f"{keyword} {date_filter}"
         url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=zh-HK&gl=HK&ceid=HK:zh-Hant"
@@ -184,22 +177,15 @@ def fetch_google_news_rss():
             items = soup.findAll('item')
             
             for item in items:
-                if new_items_count >= max_process_limit:
-                    break
-                    
+                if new_items_count >= max_process_limit: break
                 link = item.link.text
                 if link in seen_links: continue
                 title = item.title.text
                 
-                # ==========================================
-                # 🚀 透過 Gemini AI 進行一站式分析
-                # ==========================================
                 ai_data = analyze_with_gemini(title)
                 
                 if ai_data:
-                    # 智慧過濾：如果是非社福新聞，直接捨棄！
                     if not ai_data.get("is_social_welfare", True):
-                        print(f"🗑️ AI 過濾無關新聞: {title}")
                         seen_links.add(link) 
                         continue
                         
@@ -210,8 +196,7 @@ def fetch_google_news_rss():
                     })
                     keywords = ai_data.get("keywords", [])
                 else:
-                    # 如果 AI 失敗，自動切回傳統備用方案
-                    exclude_words = ["酒店", "自助餐", "旅遊", "打卡", "演唱會"]
+                    exclude_words = ["酒店", "自助餐", "旅遊", "打卡", "演唱會", "娛樂城", "金沙", "博彩", "賭場", "著數"]
                     if any(w in title for w in exclude_words): 
                         seen_links.add(link)
                         continue
@@ -228,7 +213,6 @@ def fetch_google_news_rss():
                     }
                     try: keywords = jieba.analyse.extract_tags(title, topK=5)
                     except: keywords = []
-                # ==========================================
 
                 seen_links.add(link)
                 new_items_count += 1
@@ -245,38 +229,26 @@ def fetch_google_news_rss():
                     "link": link
                 })
                 
-                # 【關鍵防護】強制限速：每處理完一篇等待 4.5 秒 (防 429 Error)
-                print(f"待機中... (API速率限制保護: 4.5秒)")
                 time.sleep(4.5)
 
-        except Exception as e:
-            print(f"抓取 {keyword} 時發生錯誤: {e}")
-            continue
+        except Exception as e: continue
             
     existing_data.sort(key=lambda x: x['date'], reverse=True)
     save_db(existing_data)
-    print(f"更新完成！本次新增 {new_items_count} 筆。")
-    return existing_data
+    print(f"背景更新完成！新增 {new_items_count} 筆。")
 
-# ==========================================================
-# 【新增】背景執行緒包裝函數 (附帶安全解鎖機制)
-# ==========================================================
 def background_update_task():
     global is_updating
     is_updating = True
-    print("啟動背景非同步更新執行緒...")
-    try:
-        fetch_google_news_rss()
-    except Exception as e:
-        print(f"背景更新發生嚴重錯誤: {e}")
-    finally:
-        # 無論成功或失敗，最後一定要解開鎖定，確保下次可以再觸發
-        is_updating = False
-        print("背景執行緒已結束，安全鎖已釋放。")
+    try: fetch_google_news_rss()
+    except Exception as e: print(f"背景更新錯誤: {e}")
+    finally: is_updating = False
 
 # ==========================================================
-# API 路由
+# API 路由區塊
 # ==========================================================
+
+# 1. 取得資料 API (包含歷史垃圾資料清洗過濾)
 @app.route('/api/news-data', methods=['GET'])
 def get_news_data():
     global is_updating
@@ -292,16 +264,61 @@ def get_news_data():
         except: 
             should_update = True
             
-    # 【關鍵修改】如果需要更新，且目前沒有其他執行緒在更新中
     if should_update and not is_updating:
-        print("觸發背景自動更新！(使用者將立即收到歷史資料，無須等待)")
-        # 建立並啟動背景執行緒去跑爬蟲與 AI，不卡住前端的回應
         thread = threading.Thread(target=background_update_task)
         thread.start()
         
-    # 直接「秒速」回傳現有的資料庫內容給讀者
-    return jsonify(data)
+    # 輸出前清洗：過濾掉歷史資料中殘留的垃圾新聞
+    clean_data = []
+    blacklist = ["酒店", "自助餐", "旅遊", "打卡", "演唱會", "娛樂城", "金沙", "博彩", "賭場", "百家樂", "著數"]
+    
+    for item in data:
+        if not any(bad_word in item.get('title', '') for bad_word in blacklist):
+            clean_data.append(item)
+            
+    return jsonify(clean_data)
 
+# 2. 專屬即時測試通道 (現場請 Gemini 分析 3 篇最新新聞)
+@app.route('/api/test-gemini', methods=['GET'])
+def test_gemini_live():
+    if not gemini_model:
+        return jsonify({"error": "Gemini API 未啟動，請檢查金鑰設定"}), 500
+        
+    try:
+        query = "香港 社福" 
+        url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=zh-HK&gl=HK&ceid=HK:zh-Hant"
+        response = requests.get(url, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(response.content, features='xml')
+        
+        # 只抓最新的 3 篇新聞來測試
+        items = soup.findAll('item')[:3] 
+        test_results = []
+        
+        for item in items:
+            title = item.title.text
+            pub_date = item.pubDate.text
+            
+            # 現場讓 Gemini 進行分析
+            ai_data = analyze_with_gemini(title)
+            
+            test_results.append({
+                "1_發布時間": pub_date,
+                "2_新聞標題": title,
+                "3_Gemini_分析結果": ai_data if ai_data else "分析失敗 (可能遇到 API 限制)"
+            })
+            
+            time.sleep(4.5) # 遵守 API 限制
+            
+        return jsonify({
+            "status": "success",
+            "message": "這是現場即時抓取並由 Gemini 分析的最新結果！(無存入資料庫)",
+            "data": test_results
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 3. 伺服器首頁檢查
 @app.route('/')
 def home():
     status = "Gemini AI" if gemini_model else "傳統算法 (SnowNLP)"
