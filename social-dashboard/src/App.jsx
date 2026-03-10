@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { LayoutDashboard, FileText, Activity, Cloud, Search, TrendingUp, TrendingDown, Clock, Layers, Table as TableIcon, LineChart as LineChartIcon, MousePointerClick, RefreshCcw, ChevronDown, CalendarDays, AlertCircle, CheckCircle2, RefreshCw, Database, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
 
-// --- 1. 模擬數據生成邏輯 (作為備用方案/Fallback) ---
+// --- 1. 基礎設定與顏色字典 ---
 
 const SERVICE_TYPES = ['安老服務', '青少年服務', '復康服務', '家庭及兒童', '社區發展', '社會保障', '勞工及就業', '醫療與精神健康', '少數族裔支援'];
 const SERVICE_COLORS = {
@@ -15,23 +15,17 @@ const SERVICE_COLORS = {
   '家庭及兒童': '#ff8042',
   '社區發展': '#0088fe',
   '社會保障': '#00c49f',
-  '勞工及就業': '#14b8a6', // Teal 藍綠色
-  '醫療與精神健康': '#8b5cf6', // Violet 紫色
-  '少數族裔支援': '#f43f5e', // Rose 玫瑰紅
-  '其他社福': '#94a3b8' // 清晰的岩灰色
+  '勞工及就業': '#14b8a6', 
+  '醫療與精神健康': '#8b5cf6', 
+  '少數族裔支援': '#f43f5e', 
+  '其他社福': '#94a3b8' 
 };
 
-const KEYWORDS_BASE = {
-  '安老服務': ['長者', '安老院', '樂齡科技', '獨居', '照顧者', '認知障礙', '醫療券'],
-  '青少年服務': ['學生', '情緒健康', '生涯規劃', '外展', '童軍', '網癮', '青年宿舍'],
-  '復康服務': ['殘疾人士', '共融', '庇護工場', '無障礙', '康復'],
-  '家庭及兒童': ['虐兒', '寄養', '單親', '家庭關係', '社工', '保護兒童'],
-  '社區發展': ['過渡性房屋', '關愛隊', '社區客廳', '扶貧', '基層', '劏房'],
-  '社會保障': ['綜援', '高齡津貼', '施政報告', '財政預算案', '福利金'],
-  '勞工及就業': ['就業', '失業', '強積金', '最低工資', '職安'],
-  '醫療與精神健康': ['精神', '情緒', '抑鬱', '輔導', '心理'],
-  '少數族裔支援': ['少數族裔', '非華語', '南亞裔', '新來港']
-};
+// 統一的關鍵字顏色庫
+const KEYWORD_COLORS = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', 
+  '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
+];
 
 // --- 2. 輔助組件 ---
 
@@ -62,7 +56,8 @@ const TimeUnitSelector = ({ value, onChange }) => (
   </div>
 );
 
-const SimpleWordCloud = ({ words, selectedWords, onWordClick }) => {
+// [修復 3]: 傳入 keywordColorMap，讓文字雲和折線圖顏色完美同步
+const SimpleWordCloud = ({ words, selectedWords, onWordClick, keywordColorMap }) => {
   if (!words || words.length === 0) return <div className="text-center text-slate-400 py-10">無足夠數據</div>;
   const maxVal = Math.max(...words.map(w => w.value));
   
@@ -73,8 +68,8 @@ const SimpleWordCloud = ({ words, selectedWords, onWordClick }) => {
         const size = 12 + (word.value / maxVal) * 20; 
         const opacity = isSelected ? 1 : 0.6;
         
-        const colors = ['text-blue-600', 'text-emerald-600', 'text-indigo-600', 'text-rose-500', 'text-amber-600'];
-        const baseColor = colors[idx % colors.length];
+        // 如果被選中，使用 map 裡的固定顏色；否則顯示預設灰色
+        const customColor = isSelected ? keywordColorMap[word.text] : '#94a3b8';
         
         return (
           <button 
@@ -83,11 +78,17 @@ const SimpleWordCloud = ({ words, selectedWords, onWordClick }) => {
             className={`
               transition-all cursor-pointer select-none px-4 py-2 rounded-full border leading-none
               ${isSelected 
-                ? `bg-blue-50 ${baseColor} border-blue-300 shadow-md scale-105 font-bold z-10` 
-                : `bg-white border-slate-200 ${baseColor} hover:bg-slate-50 hover:border-slate-300 font-medium`
+                ? `bg-slate-50 shadow-md scale-105 font-bold z-10` 
+                : `bg-white hover:bg-slate-50 hover:border-slate-300 font-medium text-slate-500 border-slate-200`
               }
             `}
-            style={{ fontSize: `${size}px`, opacity }}
+            style={{ 
+              fontSize: `${size}px`, 
+              opacity,
+              color: isSelected ? customColor : undefined,
+              borderColor: isSelected ? customColor : undefined,
+              borderWidth: isSelected ? '2px' : '1px'
+            }}
             title={`點擊以在下方圖表顯示趨勢 (次數: ${word.value})`}
           >
             {word.text}
@@ -106,22 +107,27 @@ export default function SocialServiceDashboard() {
   const [dataSource, setDataSource] = useState('connecting'); 
   const [connectionError, setConnectionError] = useState(''); 
   
-  // 全域：篩選設定
   const [globalDateRange, setGlobalDateRange] = useState('1_year'); 
   const [globalStartDate, setGlobalStartDate] = useState('');
   const [globalEndDate, setGlobalEndDate] = useState('');
   
-  // 顯示模式設定
-  const [chartMode, setChartMode] = useState('overview'); // 'overview', 'general_emotion', 'emotions'
+  const [chartMode, setChartMode] = useState('overview'); 
   const [viewMode, setViewMode] = useState('chart'); 
   
-  // 各圖表的獨立分析單位
   const [timeUnitOverview, setTimeUnitOverview] = useState('month'); 
   const [timeUnitService, setTimeUnitService] = useState('month');
   const [timeUnitKeyword, setTimeUnitKeyword] = useState('month');
   
-  // 關鍵字設定
   const [selectedKeywords, setSelectedKeywords] = useState([]);
+
+  // [修復 3 的核心]: 為目前選中的關鍵字分配穩定的顏色
+  const keywordColorMap = useMemo(() => {
+    const map = {};
+    selectedKeywords.forEach((kw, index) => {
+      map[kw] = KEYWORD_COLORS[index % KEYWORD_COLORS.length];
+    });
+    return map;
+  }, [selectedKeywords]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -132,7 +138,6 @@ export default function SocialServiceDashboard() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); 
 
-      // 請求 Render 上面的 API
       const response = await fetch('https://socialwelfaremedia.onrender.com/api/news-data', {
           signal: controller.signal
       });
@@ -159,8 +164,8 @@ export default function SocialServiceDashboard() {
       else msg = error.message;
       
       setConnectionError(msg);
-      setRawData([]); // 徹底移除假資料，改為空陣列
-      setDataSource('error'); // 將狀態改為錯誤
+      setRawData([]);
+      setDataSource('error'); 
     } finally {
       setLoading(false);
       const end = new Date();
@@ -366,7 +371,9 @@ export default function SocialServiceDashboard() {
     });
     return Object.keys(stats).map(key => ({
       name: key,
-      value: stats[key]
+      value: stats[key],
+      // [修復 1]: 直接在這裡給定 fill 屬性，確保圓餅圖和圖例的顏色 100% 同步一致
+      fill: SERVICE_COLORS[key] || '#94a3b8' 
     })).sort((a, b) => b.value - a.value);
   }, [filteredData]);
 
@@ -377,11 +384,6 @@ export default function SocialServiceDashboard() {
     if (Math.abs(avg) < 0.005) return "0.00";
     return avg.toFixed(2);
   }, [filteredData]);
-
-  const KEYWORD_COLORS = [
-    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', 
-    '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
-  ];
 
   if (loading) {
     return (
@@ -477,9 +479,7 @@ export default function SocialServiceDashboard() {
         </div>
       </header>
 
-      {/* ==========================================================
-          區塊 1：關鍵指標 (2x2) 與 類別總體分佈 (圓餅圖)
-          ========================================================== */}
+      {/* 區塊 1：關鍵指標與類別圓餅圖 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
           <StatCard title="分析文章總數" value={filteredData.length} subtext="基於所選分析區間" icon={FileText} colorClass="bg-blue-500 text-blue-500" />
@@ -497,10 +497,11 @@ export default function SocialServiceDashboard() {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={typeStats} cx="50%" cy="45%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"
+                  data={typeStats} cx="50%" cy="45%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" nameKey="name"
                 >
                   {typeStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={SERVICE_COLORS[entry.name]} />
+                    // 這裡的 Cell Fill 仍保留，確保 Slice 顏色正確
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
                 <RechartsTooltip />
@@ -520,9 +521,7 @@ export default function SocialServiceDashboard() {
         </Card>
       </div>
 
-      {/* ==========================================================
-          區塊 2：輿情線性分析 (100% 滿版寬度)
-          ========================================================== */}
+      {/* 區塊 2：輿情線性分析 */}
       <Card className="flex flex-col h-[450px] mb-6">
         <div className="flex flex-col xl:flex-row justify-between xl:items-start gap-4 mb-4">
           <div>
@@ -650,12 +649,10 @@ export default function SocialServiceDashboard() {
         </div>
       </Card>
 
-      {/* ==========================================================
-          區塊 3：並排佈局 (左: 服務類別趨勢 | 右: 關鍵字探索+走勢)
-          ========================================================== */}
+      {/* 區塊 3：並排佈局 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* 左半部：服務類別趨勢 (自動拉長高度對齊右側，100%滿版堆疊面積圖) */}
+        {/* 左半部：服務類別趨勢 */}
         <Card className="flex flex-col h-full min-h-[500px]">
           <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div>
@@ -673,16 +670,14 @@ export default function SocialServiceDashboard() {
 
           <div className="flex-1 w-full min-h-0 mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              {/* stackOffset="expand" 用於轉換為 100% 堆疊面積圖 */}
               <AreaChart key={timeUnitService} data={serviceTrendData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }} stackOffset="expand">
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" tickMargin={10} minTickGap={20}/>
-                
-                {/* Y 軸轉換為百分比顯示 */}
                 <YAxis tickFormatter={(tick) => `${(tick * 100).toFixed(0)}%`} tick={{fontSize: 11}} width={45} />
                 
-                {/* 自訂 Tooltip：同時顯示真實數量與百分比佔比 */}
+                {/* [修復 2]: 加入 itemSorter，讓 Tooltip 裡的清單順序反轉，吻合視覺上的由上至下堆疊 */}
                 <RechartsTooltip 
+                  itemSorter={(item) => -Object.keys(SERVICE_COLORS).indexOf(item.dataKey)}
                   labelFormatter={(label, payload) => payload && payload.length > 0 ? payload[0].payload.fullLabel : label}
                   formatter={(value, name, props) => {
                      const payloadData = props.payload;
@@ -696,6 +691,7 @@ export default function SocialServiceDashboard() {
                   contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                 />
                 <Legend wrapperStyle={{fontSize: '11px', paddingTop: '10px'}}/>
+                
                 {Object.keys(SERVICE_COLORS).map((type, index) => (
                   <Area 
                     key={type}
@@ -712,7 +708,7 @@ export default function SocialServiceDashboard() {
           </div>
         </Card>
 
-        {/* 右半部：關鍵字生態系 (上下疊加) */}
+        {/* 右半部：關鍵字生態系 */}
         <div className="flex flex-col gap-6">
             
             {/* 右上：文字雲 */}
@@ -738,10 +734,13 @@ export default function SocialServiceDashboard() {
                     <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full shadow-sm z-20 pointer-events-none">
                       <MousePointerClick size={12}/> 點擊過濾
                     </div>
+                    
+                    {/* [修復 3]: 將顏色對應表傳遞給文字雲組件 */}
                     <SimpleWordCloud 
                       words={keywordData.cloudData} 
                       selectedWords={selectedKeywords}
                       onWordClick={handleKeywordClick}
+                      keywordColorMap={keywordColorMap}
                     />
               </div>
             </Card>
@@ -778,8 +777,9 @@ export default function SocialServiceDashboard() {
                             key={kw} 
                             type="monotone" 
                             dataKey={kw} 
-                            stroke={KEYWORD_COLORS[i % KEYWORD_COLORS.length]} 
-                            strokeWidth={2}
+                            // [修復 3]: 從同一個顏色字典讀取顏色，保證圖表與文字雲完美連動！
+                            stroke={keywordColorMap[kw]} 
+                            strokeWidth={3}
                             dot={false}
                             animationDuration={500}
                           />
