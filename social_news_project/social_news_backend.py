@@ -29,17 +29,35 @@ def analyze_with_deepseek(title):
     if not DEEPSEEK_API_KEY:
         return {"error": "未偵測到 DEEPSEEK_API_KEY 環境變數"}
 
+    # 🌟 核心升級：加入最強級別的「分類約束與防呆警告」
     prompt = f"""
     你是一個專業的香港社會福利政策分析專家。請分析以下新聞標題，並嚴格以 JSON 格式回傳結果。
     新聞標題：「{title}」
 
+    【分類指引與嚴格警告】
+    請根據標題內容，從以下 10 個類別中挑選「最精確」的一個。
+    ⚠️ 絕對警告：回傳的 `type` 欄位「必須」完全照抄以下 10 個選項中的其中一個字串，連一個標點符號或字眼都不准改！絕對不可以自己發明新分類（例如不可用「兒童保護」，必須用「家庭及兒童」；不可用「精神健康」，必須用「醫療與精神健康」）！
+    
+    1. "安老服務" (包含：長者、安老院、護老、樂悠咭、銀髮、醫療券)
+    2. "青少年服務" (包含：青年發展、學生、童軍、青年宿舍、DSE)
+    3. "復康服務" (包含：殘疾人士、特殊需要、自閉症、無障礙、庇護工場、SEN)
+    4. "家庭及兒童" (包含：虐童、家暴、托兒、家長支援、保護兒童、兒童保護、單親)
+    5. "社區發展" (包含：關愛隊、社區中心、鄰舍、地區治理、劏房、過渡性房屋、房屋支援)
+    6. "社會保障" (包含：綜援、津貼、生果金、長者生活津貼、扶貧、派糖、預算案、經濟政策)
+    7. "勞工及就業" (包含：最低工資、外傭、職安健、失業支援、人才、打工仔)
+    8. "醫療與精神健康" (包含：醫院、精神病、情緒支援、社康護理、抑鬱、精神健康)
+    9. "少數族裔支援" (包含：南亞裔、翻譯服務、種族融和、非華語)
+    10. "其他社福" (只有在上述 9 項完全不符合時才使用)
+
     回傳 JSON 格式要求：
     {{
-        "is_social_welfare": boolean,
-        "type": string, 
-        "sentiment": float, 
-        "emotions": {{ "joy": float, "sadness": float, "trust": float, "anticipation": float, "anger": float, "fear": float }},
-        "keywords": [string, string, string, string, string]
+        "is_social_welfare": boolean, // 判斷是否為香港社福/民生/弱勢群體相關新聞。純廣告、商業旅遊、娛樂設為 false。
+        "type": string, // 必須完全照抄上述 10 個選項的其中一個名稱！
+        "sentiment": float, // 情感極性：-1.0 (負面) 到 1.0 (正面)。
+        "emotions": {{
+            "joy": float, "sadness": float, "trust": float, "anticipation": float, "anger": float, "fear": float 
+        }},
+        "keywords": [string, string, string, string, string] // 提取 5 個精確關鍵字
     }}
     """
 
@@ -58,12 +76,12 @@ def analyze_with_deepseek(title):
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}"
     }
 
-    # 🌟 對抗 API 頻率限制 (Rate Limit) 的重試機制
+    # API 頻率限制 (Rate Limit) 的重試機制
     for attempt in range(3):
         try:
             response = requests.post(DEEPSEEK_URL, headers=headers, json=payload, timeout=25)
             
-            # 如果遇到 429 請求太快，乖乖休息 5 秒再試一次
+            # 遇到 429 請求太快，休息 5 秒再試
             if response.status_code == 429:
                 print(f"⚠️ API 頻率過高，暫停 5 秒... (第 {attempt+1} 次重試)")
                 time.sleep(5)
@@ -74,7 +92,7 @@ def analyze_with_deepseek(title):
             
         except Exception as e:
             print(f"DeepSeek 分析失敗 (嘗試 {attempt+1}/3): {e}")
-            time.sleep(3) # 其他錯誤也休息 3 秒
+            time.sleep(3) 
             
     return {"error": "API 連續失敗"}
 
@@ -91,7 +109,6 @@ def save_db(data):
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# 🌟 完美日期解析器
 def parse_date(date_str):
     try:
         dt = parsedate_to_datetime(date_str)
@@ -109,7 +126,7 @@ def fetch_news_task():
     data = load_db() or []
     seen_links = set(item['link'] for item in data)
     
-    process_limit = 150 # 🌟 解除上限，足以應付每天的所有新聞
+    process_limit = 150 # 解除上限，足以應付每天的所有新聞
     count = 0
     consecutive_errors = 0 
     
@@ -119,7 +136,7 @@ def fetch_news_task():
     for kw in SEARCH_KEYWORDS:
         if count >= process_limit: break
         
-        # 🌟 破解 Google 演算法：強制只搜尋過去 48 小時
+        # 強制只搜尋過去 48 小時
         query = f"{kw} when:2d"
         url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=zh-HK&gl=HK&ceid=HK:zh-Hant"
         
@@ -140,11 +157,11 @@ def fetch_news_task():
 
                 ai_result = analyze_with_deepseek(title)
                 
-                # 🌟 強制呼吸機制：每處理一篇，不管成功或失敗，強制爬蟲停頓 2 秒
+                # 強制呼吸機制：每處理一篇停頓 2 秒
                 time.sleep(2)
                 
                 if ai_result and "error" not in ai_result:
-                    consecutive_errors = 0 # 成功就歸零
+                    consecutive_errors = 0 
                     
                     if not ai_result.get("is_social_welfare", True):
                         seen_links.add(link)
@@ -166,7 +183,7 @@ def fetch_news_task():
                     consecutive_errors += 1
                     print(f"❌ 累積失敗 {consecutive_errors} 次: 可能是 API 餘額耗盡或被鎖")
                     
-                    # 🌟 斷路器：連續失敗 5 次即停止，保護系統
+                    # 斷路器：連續失敗 5 次即停止
                     if consecutive_errors >= 5:
                         print("🛑 觸發系統保護：連續失敗 5 次，強制結束本次更新！")
                         data.sort(key=lambda x: x['date'], reverse=True)
@@ -203,10 +220,11 @@ def get_data():
 
 @app.route('/')
 def home():
-    engine = "DeepSeek-V3 (Ultimate Protection)"
+    engine = "DeepSeek-V3 (Strict Category Enforcement)"
     status = "⚠️ 更新中" if is_updating else "✅ 待命"
     return f"<h3>Social News API Status</h3>Engine: {engine}<br>Status: {status}"
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
