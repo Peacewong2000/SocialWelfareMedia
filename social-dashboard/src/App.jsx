@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  ComposedChart, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
+  ComposedChart, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
   PieChart, Pie, Cell, Area, AreaChart, ReferenceLine
 } from 'recharts';
-import { LayoutDashboard, FileText, Activity, Cloud, Search, TrendingUp, TrendingDown, Clock, Layers, Table as TableIcon, LineChart as LineChartIcon, MousePointerClick, RefreshCcw, ChevronDown, CalendarDays, AlertCircle, CheckCircle2, RefreshCw, Database, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
+import { LayoutDashboard, FileText, Activity, Cloud, Search, TrendingUp, TrendingDown, Clock, Layers, Table as TableIcon, LineChart as LineChartIcon, MousePointerClick, RefreshCcw, ChevronDown, CalendarDays, AlertCircle, CheckCircle2, RefreshCw, Database, BarChart2, PieChart as PieChartIcon, ExternalLink } from 'lucide-react';
 
 // --- 1. 基礎設定與顏色字典 ---
 
@@ -56,7 +56,7 @@ const TimeUnitSelector = ({ value, onChange }) => (
   </div>
 );
 
-// [修復 3]: 傳入 keywordColorMap，讓文字雲和折線圖顏色完美同步
+// 支援顏色同步的文字雲
 const SimpleWordCloud = ({ words, selectedWords, onWordClick, keywordColorMap }) => {
   if (!words || words.length === 0) return <div className="text-center text-slate-400 py-10">無足夠數據</div>;
   const maxVal = Math.max(...words.map(w => w.value));
@@ -120,7 +120,7 @@ export default function SocialServiceDashboard() {
   
   const [selectedKeywords, setSelectedKeywords] = useState([]);
 
-  // [修復 3 的核心]: 為目前選中的關鍵字分配穩定的顏色
+  // 為目前選中的關鍵字分配穩定的顏色
   const keywordColorMap = useMemo(() => {
     const map = {};
     selectedKeywords.forEach((kw, index) => {
@@ -136,7 +136,8 @@ export default function SocialServiceDashboard() {
     
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); 
+      // 寬限期設為 60 秒，避免 Render 睡眠喚醒逾時
+      const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
       const response = await fetch('https://socialwelfaremedia.onrender.com/api/news-data', {
           signal: controller.signal
@@ -150,7 +151,16 @@ export default function SocialServiceDashboard() {
       const realData = await response.json();
       
       if (Array.isArray(realData) && realData.length > 0) {
-          setRawData(realData);
+          // 強制校正不符合標準分類的資料，並保留原分類供除錯
+          const normalizedData = realData.map(item => {
+            const isValidCategory = SERVICE_COLORS[item.type] !== undefined;
+            return {
+              ...item,
+              rawType: item.type,
+              type: isValidCategory ? item.type : '其他社福'
+            };
+          });
+          setRawData(normalizedData);
           setDataSource('real');
       } else {
           setConnectionError("連線成功，但目前資料庫為空");
@@ -160,7 +170,7 @@ export default function SocialServiceDashboard() {
 
     } catch (error) {
       let msg = "未知錯誤";
-      if (error.name === 'AbortError') msg = "連線逾時 (後端回應太慢或正在啟動中)";
+      if (error.name === 'AbortError') msg = "連線逾時 (等待超過 60 秒，請檢查網路或重試)";
       else msg = error.message;
       
       setConnectionError(msg);
@@ -186,6 +196,7 @@ export default function SocialServiceDashboard() {
     if (globalDateRange === 'custom') {
         if (!globalStartDate || !globalEndDate) return rawData;
         const start = new Date(globalStartDate);
+        start.setHours(0, 0, 0, 0);
         const end = new Date(globalEndDate);
         end.setHours(23, 59, 59, 999); 
         return rawData.filter(d => {
@@ -196,6 +207,7 @@ export default function SocialServiceDashboard() {
 
     const now = new Date();
     const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
     
     switch(globalDateRange) {
         case '7_days': cutoff.setDate(now.getDate() - 7); break;
@@ -300,8 +312,7 @@ export default function SocialServiceDashboard() {
       Object.keys(SERVICE_COLORS).forEach(t => counts[t] = 0);
       
       group.items.forEach(item => {
-        const type = SERVICE_COLORS[item.type] ? item.type : '其他社福';
-        counts[type]++;
+        counts[item.type]++;
       });
       return counts;
     });
@@ -366,13 +377,11 @@ export default function SocialServiceDashboard() {
   const typeStats = useMemo(() => {
     const stats = {};
     filteredData.forEach(item => {
-      const type = SERVICE_COLORS[item.type] ? item.type : '其他社福';
-      stats[type] = (stats[type] || 0) + 1;
+      stats[item.type] = (stats[item.type] || 0) + 1;
     });
     return Object.keys(stats).map(key => ({
       name: key,
       value: stats[key],
-      // [修復 1]: 直接在這裡給定 fill 屬性，確保圓餅圖和圖例的顏色 100% 同步一致
       fill: SERVICE_COLORS[key] || '#94a3b8' 
     })).sort((a, b) => b.value - a.value);
   }, [filteredData]);
@@ -390,7 +399,7 @@ export default function SocialServiceDashboard() {
       <div className="flex h-screen w-full items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="text-slate-500">正在連接數據分析引擎...</p>
+          <p className="text-slate-500">正在連接數據分析引擎 (首次喚醒可能需要 30~50 秒)...</p>
         </div>
       </div>
     );
@@ -500,7 +509,6 @@ export default function SocialServiceDashboard() {
                   data={typeStats} cx="50%" cy="45%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" nameKey="name"
                 >
                   {typeStats.map((entry, index) => (
-                    // 這裡的 Cell Fill 仍保留，確保 Slice 顏色正確
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Pie>
@@ -652,7 +660,7 @@ export default function SocialServiceDashboard() {
       {/* 區塊 3：並排佈局 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* 左半部：服務類別趨勢 */}
+        {/* 左半部：服務類別趨勢 (已完美修復堆疊順序) */}
         <Card className="flex flex-col h-full min-h-[500px]">
           <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div>
@@ -675,24 +683,33 @@ export default function SocialServiceDashboard() {
                 <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" tickMargin={10} minTickGap={20}/>
                 <YAxis tickFormatter={(tick) => `${(tick * 100).toFixed(0)}%`} tick={{fontSize: 11}} width={45} />
                 
-                {/* [修復 2]: 加入 itemSorter，讓 Tooltip 裡的清單順序反轉，吻合視覺上的由上至下堆疊 */}
                 <RechartsTooltip 
-                  itemSorter={(item) => -Object.keys(SERVICE_COLORS).indexOf(item.dataKey)}
+                  itemSorter={(item) => Object.keys(SERVICE_COLORS).indexOf(item.dataKey)}
                   labelFormatter={(label, payload) => payload && payload.length > 0 ? payload[0].payload.fullLabel : label}
                   formatter={(value, name, props) => {
                      const payloadData = props.payload;
                      let total = 0;
-                     Object.keys(SERVICE_COLORS).forEach(k => {
-                         total += (payloadData[k] || 0);
-                     });
+                     Object.keys(SERVICE_COLORS).forEach(k => { total += (payloadData[k] || 0); });
                      const percent = total > 0 ? ((value / total) * 100).toFixed(1) + '%' : '0%';
                      return [`${value} 篇 (${percent})`, name];
                   }}
                   contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                 />
-                <Legend wrapperStyle={{fontSize: '11px', paddingTop: '10px'}}/>
                 
-                {Object.keys(SERVICE_COLORS).map((type, index) => (
+                <Legend 
+                  payload={
+                    Object.keys(SERVICE_COLORS).map(key => ({
+                      id: key,
+                      type: 'square',
+                      value: key,
+                      color: SERVICE_COLORS[key]
+                    }))
+                  }
+                  wrapperStyle={{fontSize: '11px', paddingTop: '10px'}}
+                />
+                
+                {/* 使用 reverse 確保畫面上方的圖塊與陣列開頭對應，徹底解決撕裂感 */}
+                {[...Object.keys(SERVICE_COLORS)].reverse().map((type) => (
                   <Area 
                     key={type}
                     type="monotone" 
@@ -735,7 +752,6 @@ export default function SocialServiceDashboard() {
                       <MousePointerClick size={12}/> 點擊過濾
                     </div>
                     
-                    {/* [修復 3]: 將顏色對應表傳遞給文字雲組件 */}
                     <SimpleWordCloud 
                       words={keywordData.cloudData} 
                       selectedWords={selectedKeywords}
@@ -777,7 +793,6 @@ export default function SocialServiceDashboard() {
                             key={kw} 
                             type="monotone" 
                             dataKey={kw} 
-                            // [修復 3]: 從同一個顏色字典讀取顏色，保證圖表與文字雲完美連動！
                             stroke={keywordColorMap[kw]} 
                             strokeWidth={3}
                             dot={false}
@@ -798,6 +813,79 @@ export default function SocialServiceDashboard() {
 
         </div>
       </div>
+
+      {/* ==========================================================
+          區塊 4：原始新聞明細列表 (保留「原 AI 分類」除錯功能)
+          ========================================================== */}
+      <Card className="mt-6">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <FileText size={20} className="text-blue-600" />
+              相關新聞明細
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              顯示目前所選區間內的新聞 (由新到舊排序，最多顯示 100 筆)
+            </p>
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto max-h-[400px] border border-slate-200 rounded-lg">
+          <table className="w-full text-sm text-left text-slate-600">
+            <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10">
+              <tr>
+                <th className="px-4 py-3 min-w-[100px] border-b border-slate-200">發布日期</th>
+                <th className="px-4 py-3 min-w-[150px] border-b border-slate-200">服務類別</th>
+                <th className="px-4 py-3 w-1/2 border-b border-slate-200">新聞標題</th>
+                <th className="px-4 py-3 text-right min-w-[100px] border-b border-slate-200">情緒分數</th>
+                <th className="px-4 py-3 text-center border-b border-slate-200">原始連結</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredData.slice(0, 100).map((item, index) => (
+                <tr key={`${item.id}-${index}`} className="bg-white border-b hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-medium">{item.date}</td>
+                  <td className="px-4 py-3">
+                    <span 
+                      className="px-2.5 py-1 text-[11px] font-bold rounded-full text-white inline-block mb-1" 
+                      style={{ backgroundColor: SERVICE_COLORS[item.type] || SERVICE_COLORS['其他社福'] }}
+                    >
+                      {item.type}
+                    </span>
+                    {/* 異常分類揭密：若原分類不合規，則在此顯示 */}
+                    {item.rawType !== item.type && (
+                      <div className="text-[10px] text-slate-400 border border-slate-200 px-1.5 py-0.5 rounded bg-slate-50 inline-block">
+                        原 AI: {item.rawType}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-800 font-medium">{item.title}</td>
+                  <td className="px-4 py-3 text-right font-bold" style={{ color: item.sentiment >= 0 ? '#10b981' : '#ef4444' }}>
+                    {item.sentiment > 0 ? `+${item.sentiment}` : item.sentiment}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {item.link ? (
+                      <a href={item.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded transition-colors">
+                        <ExternalLink size={16} />
+                      </a>
+                    ) : (
+                      <span className="text-slate-300">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {filteredData.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="px-4 py-12 text-center text-slate-400 bg-slate-50/50">
+                    <Search size={32} className="mx-auto mb-2 opacity-30" />
+                    目前選擇的區間內沒有相關新聞資料
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
