@@ -3,7 +3,7 @@ import {
   ComposedChart, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, 
   PieChart, Pie, Cell, Area, AreaChart, ReferenceLine
 } from 'recharts';
-import { LayoutDashboard, FileText, Activity, Cloud, Search, TrendingUp, TrendingDown, Clock, Layers, Table as TableIcon, LineChart as LineChartIcon, MousePointerClick, RefreshCcw, ChevronDown, CalendarDays, AlertCircle, CheckCircle2, RefreshCw, Database, BarChart2, PieChart as PieChartIcon, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, FileText, Activity, Cloud, Search, TrendingUp, TrendingDown, Clock, Layers, Table as TableIcon, LineChart as LineChartIcon, MousePointerClick, RefreshCcw, ChevronDown, CalendarDays, AlertCircle, CheckCircle2, RefreshCw, Database, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
 
 // --- 1. 基礎設定與顏色字典 ---
 
@@ -68,7 +68,6 @@ const SimpleWordCloud = ({ words, selectedWords, onWordClick, keywordColorMap })
         const size = 12 + (word.value / maxVal) * 20; 
         const opacity = isSelected ? 1 : 0.6;
         
-        // 如果被選中，使用 map 裡的固定顏色；否則顯示預設灰色
         const customColor = isSelected ? keywordColorMap[word.text] : '#94a3b8';
         
         return (
@@ -120,7 +119,6 @@ export default function SocialServiceDashboard() {
   
   const [selectedKeywords, setSelectedKeywords] = useState([]);
 
-  // 為目前選中的關鍵字分配穩定的顏色
   const keywordColorMap = useMemo(() => {
     const map = {};
     selectedKeywords.forEach((kw, index) => {
@@ -136,7 +134,6 @@ export default function SocialServiceDashboard() {
     
     try {
       const controller = new AbortController();
-      // 寬限期設為 60 秒，避免 Render 睡眠喚醒逾時
       const timeoutId = setTimeout(() => controller.abort(), 60000); 
 
       const response = await fetch('https://socialwelfaremedia.onrender.com/api/news-data', {
@@ -151,7 +148,6 @@ export default function SocialServiceDashboard() {
       const realData = await response.json();
       
       if (Array.isArray(realData) && realData.length > 0) {
-          // 強制校正不符合標準分類的資料，並保留原分類供除錯
           const normalizedData = realData.map(item => {
             const isValidCategory = SERVICE_COLORS[item.type] !== undefined;
             return {
@@ -660,8 +656,8 @@ export default function SocialServiceDashboard() {
       {/* 區塊 3：並排佈局 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* 左半部：服務類別趨勢 (已完美修復堆疊順序) */}
-        <Card className="flex flex-col h-full min-h-[500px]">
+        {/* 左半部：服務類別趨勢 (已完全捨棄原生 Legend，改用完全自訂的圖例，保證 100% 絕對順序) */}
+        <Card className="flex flex-col h-full min-h-[550px]">
           <div className="mb-4 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div>
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -676,9 +672,9 @@ export default function SocialServiceDashboard() {
             </div>
           </div>
 
-          <div className="flex-1 w-full min-h-0 mt-4">
+          <div className="flex-1 w-full min-h-[350px] mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart key={timeUnitService} data={serviceTrendData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }} stackOffset="expand">
+              <AreaChart key={timeUnitService} data={serviceTrendData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }} stackOffset="expand">
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" tick={{fontSize: 11, fill: '#64748b'}} interval="preserveStartEnd" tickMargin={10} minTickGap={20}/>
                 <YAxis tickFormatter={(tick) => `${(tick * 100).toFixed(0)}%`} tick={{fontSize: 11}} width={45} />
@@ -696,16 +692,19 @@ export default function SocialServiceDashboard() {
                   contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                 />
                 
+                {/* 💡 放棄使用原生 Legend 組件，以避免 SVG 在手機版上錯亂。改用自訂 Content。 */}
                 <Legend 
-                  payload={
-                    Object.keys(SERVICE_COLORS).map(key => ({
-                      id: key,
-                      type: 'square',
-                      value: key,
-                      color: SERVICE_COLORS[key]
-                    }))
-                  }
-                  wrapperStyle={{fontSize: '11px', paddingTop: '10px'}}
+                  verticalAlign="bottom"
+                  content={() => (
+                    <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 pt-6 pb-2">
+                      {Object.keys(SERVICE_COLORS).map(key => (
+                        <div key={key} className="flex items-center gap-1.5 cursor-default">
+                          <div className="w-3 h-3 rounded-sm shadow-sm" style={{ backgroundColor: SERVICE_COLORS[key] }}></div>
+                          <span className="text-[11px] sm:text-xs text-slate-600 font-medium whitespace-nowrap">{key}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 />
                 
                 {/* 使用 reverse 確保畫面上方的圖塊與陣列開頭對應，徹底解決撕裂感 */}
@@ -813,79 +812,8 @@ export default function SocialServiceDashboard() {
 
         </div>
       </div>
-
-      {/* ==========================================================
-          區塊 4：原始新聞明細列表 (保留「原 AI 分類」除錯功能)
-          ========================================================== */}
-      <Card className="mt-6">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <FileText size={20} className="text-blue-600" />
-              相關新聞明細
-            </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              顯示目前所選區間內的新聞 (由新到舊排序，最多顯示 100 筆)
-            </p>
-          </div>
-        </div>
-        
-        <div className="overflow-x-auto max-h-[400px] border border-slate-200 rounded-lg">
-          <table className="w-full text-sm text-left text-slate-600">
-            <thead className="text-xs text-slate-700 uppercase bg-slate-50 sticky top-0 z-10">
-              <tr>
-                <th className="px-4 py-3 min-w-[100px] border-b border-slate-200">發布日期</th>
-                <th className="px-4 py-3 min-w-[150px] border-b border-slate-200">服務類別</th>
-                <th className="px-4 py-3 w-1/2 border-b border-slate-200">新聞標題</th>
-                <th className="px-4 py-3 text-right min-w-[100px] border-b border-slate-200">情緒分數</th>
-                <th className="px-4 py-3 text-center border-b border-slate-200">原始連結</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredData.slice(0, 100).map((item, index) => (
-                <tr key={`${item.id}-${index}`} className="bg-white border-b hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-medium">{item.date}</td>
-                  <td className="px-4 py-3">
-                    <span 
-                      className="px-2.5 py-1 text-[11px] font-bold rounded-full text-white inline-block mb-1" 
-                      style={{ backgroundColor: SERVICE_COLORS[item.type] || SERVICE_COLORS['其他社福'] }}
-                    >
-                      {item.type}
-                    </span>
-                    {/* 異常分類揭密：若原分類不合規，則在此顯示 */}
-                    {item.rawType !== item.type && (
-                      <div className="text-[10px] text-slate-400 border border-slate-200 px-1.5 py-0.5 rounded bg-slate-50 inline-block">
-                        原 AI: {item.rawType}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-800 font-medium">{item.title}</td>
-                  <td className="px-4 py-3 text-right font-bold" style={{ color: item.sentiment >= 0 ? '#10b981' : '#ef4444' }}>
-                    {item.sentiment > 0 ? `+${item.sentiment}` : item.sentiment}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {item.link ? (
-                      <a href={item.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800 hover:bg-blue-50 p-1.5 rounded transition-colors">
-                        <ExternalLink size={16} />
-                      </a>
-                    ) : (
-                      <span className="text-slate-300">-</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {filteredData.length === 0 && (
-                <tr>
-                  <td colSpan="5" className="px-4 py-12 text-center text-slate-400 bg-slate-50/50">
-                    <Search size={32} className="mx-auto mb-2 opacity-30" />
-                    目前選擇的區間內沒有相關新聞資料
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      
     </div>
   );
 }
+
